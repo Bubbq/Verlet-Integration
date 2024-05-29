@@ -1,28 +1,30 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <raylib.h>
 #include <raymath.h>
 #include <string.h>
+#define LIMIT 1024
 
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
 const int FPS = 60;
 const int GAME_AREA = 500;
-
+const float MIN_BALANCE = 0.10;
 // screen & game area
 const Rectangle SCRA = {0, 0, 500, 600};
 const Rectangle GA = {0,0, GAME_AREA, GAME_AREA};
 
 const int OBJ_SIZE = 16;
 const int OBJ_COUNT = 30;
-const float OBJ_SPEED = 2.00;
+const float OBJ_SPEED = 3.00;
 
 // rock, paper, and scissor spawn areas
 const Rectangle RA = {0, 0, (GAME_AREA / 2.0f), (GAME_AREA / 2.0f)};
 const Rectangle PA = {(GAME_AREA  / 2.0f), 0, (GAME_AREA / 2.0f), (GAME_AREA / 2.0f)};
 const Rectangle SA = {(GAME_AREA  / 4.0f), (GAME_AREA / 2.0f), (GAME_AREA / 2.0f), (GAME_AREA / 2.0f)};
 
-enum type
+enum Type
 {
 	UNDF = -1,
 	ROCK = 0,
@@ -34,19 +36,15 @@ enum type
 typedef struct
 {
 	bool move;
-	// current position
 	Vector2 pos;
-	// movement components
 	float dx, dy;
-	// objects type (rock, paper, or scissors)
-	enum type type;
-	// png image to b displayed
+	enum Type type;
 	Texture2D texture;
 } Object;
 
 typedef struct
 {
-	enum type bet;
+	enum Type bet;
 	float balance;
 	float bet_amount;
 } Player;
@@ -82,23 +80,23 @@ void handleBorderCollision(Object* obj)
 }
 
 // determines the winner between obj i and j based on rock paper scissors rules
-void findWinner(Object* i, Object* j)
+void collisionWinner(Object* i, Object* j)
 {
 	switch (i->type)
 	{
-		case ROCK:
-			if(j->type == PAPER) i->type = PAPER; // loss
-			else if(j->type == SCISSORS) j->type = ROCK; // win
+		case ROCK: // loses against paper and wins vs scissors
+			if(j->type == PAPER) i->type = PAPER; 
+			else if(j->type == SCISSORS) j->type = ROCK;
 			break;
 			
-		case PAPER:
-			if(j->type == SCISSORS) i->type = SCISSORS; // win
-			else if(j->type == ROCK) j->type = PAPER; // loss
+		case PAPER: // loses against scissors and wins against rock
+			if(j->type == SCISSORS) i->type = SCISSORS; 
+			else if(j->type == ROCK) j->type = PAPER; 
 			break;
 
-		case SCISSORS:
-			if(j->type == ROCK) i->type = ROCK; // loss
-			else if(j->type == PAPER) j->type = SCISSORS; // win
+		case SCISSORS: // loses against and wins vs. paper
+			if(j->type == ROCK) i->type = ROCK; 
+			else if(j->type == PAPER) j->type = SCISSORS;
 			break;
 
 		default:
@@ -134,7 +132,7 @@ void handleObjectCollision(Object* i, Object* j)
 	j->dx = vj_new.x; j->dy = vj_new.y;
 
 	// gets winner from collision
-	findWinner(i, j);
+	collisionWinner(i, j);
 }
 
 // to move each object within the screen
@@ -167,8 +165,10 @@ void updateObjects(Object objects[OBJ_COUNT])
 }
 
 // adds rock, paper, and scissor objects to the area
-void setObjects(Object objects[OBJ_COUNT])
+void setObjects(Object objects[OBJ_COUNT], bool* reset)
 {
+	*reset = true;
+
 	int i = 0;
 	for(; i < 10; i++) {objects[i].type = ROCK; objects[i].pos = (Vector2){GetRandomValue(RA.x, (RA.x + RA.width) - OBJ_SIZE), GetRandomValue(RA.y, (RA.y + RA.height) - OBJ_SIZE)}; objects[i].dx = objects[i].dy = 0;}
 	for(; i < 20; i++) {objects[i].type = PAPER; objects[i].pos = (Vector2){GetRandomValue(PA.x, (PA.x + PA.width) - OBJ_SIZE), GetRandomValue(PA.y, (PA.y + PA.height) - OBJ_SIZE)}; objects[i].dx = objects[i].dy = 0;}
@@ -176,7 +176,7 @@ void setObjects(Object objects[OBJ_COUNT])
 }
 
 // objects now move by randomly generating movement components
-void startGame(Object objects[OBJ_COUNT])
+void startGame(Object objects[OBJ_COUNT], bool* reset, bool* game_end)
 {
 	for(int i = 0; i < OBJ_COUNT; i++)
 	{
@@ -184,83 +184,110 @@ void startGame(Object objects[OBJ_COUNT])
 		objects[i].dx = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
 		objects[i].dy = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
 	}
+	
+	*reset = false;
+	*game_end = false;
 }
 
 // returns the type of object that wins the entire game
-enum type checkWinner(Object objects[OBJ_COUNT])
+enum Type checkWinner(Object objects[OBJ_COUNT])
 {
-	int rcnt = 0; int pcnt = 0; int scnt = 0;
+	int rcnt = 0;
+	int pcnt = 0;
+	int scnt = 0;
 
 	for(int i = 0; i < OBJ_COUNT; i++)
 	{
 		switch (objects[i].type)
 		{
-			case ROCK: rcnt++; break;
-			case PAPER: pcnt++; break;
-			case SCISSORS: scnt++; break;
+			case ROCK: rcnt++; if(rcnt == OBJ_COUNT) return ROCK; break;
+			case PAPER: pcnt++; if(pcnt == OBJ_COUNT) return PAPER; break;
+			case SCISSORS: scnt++; if(scnt == OBJ_COUNT) return SCISSORS; break;
 			default:   
 				break;
 		}
 	}
 
-	// printf("%d %d %d \n", rcnt, pcnt, scnt);
-	if(rcnt == OBJ_COUNT) return ROCK;
-	else if(pcnt == OBJ_COUNT) return PAPER;
-	else if(scnt == OBJ_COUNT) return SCISSORS;
-	else return UNDF;
+	return UNDF;
 }
 
-void init(Object objects[OBJ_COUNT], Player* player)
+// to customize bet and amount at stake
+void placeBet(Player* player, char btn_dialouge[LIMIT])
+{
+	char balance_dialouge[LIMIT];
+	char bet_amount_dialouge[LIMIT];
+
+	strcpy(btn_dialouge, "START");
+
+	// choosing bet
+	if(GuiButton((Rectangle){0, GA.height + 5, 20, 20}, "R")) player->bet = ROCK;
+	if(GuiButton((Rectangle){30, GA.height + 5, 20, 20}, "P")) player->bet = PAPER;
+	if(GuiButton((Rectangle){60, GA.height + 5, 20, 20}, "S")) player->bet = SCISSORS;
+	
+	// displaying current betting information
+	sprintf(balance_dialouge, "BALANCE: %.2f", player->balance);
+	sprintf(bet_amount_dialouge, "BET AMOUNT: %.2f", player->bet_amount);
+	DrawText(balance_dialouge, 0, GA.height + 35, 10, RAYWHITE);
+	DrawText(bet_amount_dialouge, 0, GA.height + 50, 10, RAYWHITE);
+
+	// choose bet amount with slider
+	GuiSliderBar((Rectangle){0, GA.height + 65, 100, 20}, "", "", &player->bet_amount, 0.10, player->balance);
+}
+
+// rewards or punishes player based on bet and bet amount
+void payout(Object objects[OBJ_COUNT], Player* player, char btn_dialouge[LIMIT], bool win, bool* game_end)
+{
+	if(win) player->balance += (player->bet_amount * 2);
+	else player->balance -= player->bet_amount; 
+	
+	*game_end = true;  
+	player->bet = UNDF;
+	player->bet_amount = (player->balance * 0.20f);
+	strcpy(btn_dialouge, "RESET");
+}
+
+void init(Object objects[OBJ_COUNT], Player* player, bool* reset)
 {
 	SetTargetFPS(FPS);
 	SetTraceLogLevel(LOG_ERROR);
 	InitWindow(SCRA.width, SCRA.height, "Rock, Paper, Scissors Sim");
-	setObjects(objects);
-
+	setObjects(objects, reset);
 
 	player->bet = UNDF;
 	player->balance = 100.00;
-	player->bet_amount = 10.00;
+	player->bet_amount = 20.00;
 }
 
 int main()
 {
-   Player player;
-   char* btn = "";
-   enum type wobjt = UNDF;
-   Object objects[OBJ_COUNT];
-   void (*btn_exe)(Object[OBJ_COUNT]) = startGame;
-  
-   init(objects, &player);
+	bool reset = false;
+    bool game_end = true;
+    char btn_dialouge[LIMIT] = "START";
+    Player player;
+    Object objects[OBJ_COUNT];
+    init(objects, &player, &reset);
 
-   while(!WindowShouldClose())
-   {
-		if((wobjt = checkWinner(objects)) != UNDF)
-		{
-			btn = "RESET";
-			for(int i = 0; i < OBJ_COUNT; i++) objects[i].move = false;
-			btn_exe = setObjects;
-		}
-
-		else {btn = "START"; btn_exe = startGame;}
-
-		// choosing bet
-		if(GuiButton((Rectangle){0, GA.height + 15, 20, 20}, "R")) player.bet = ROCK;
-		if(GuiButton((Rectangle){0, GA.height + 45, 20, 20}, "P")) player.bet = PAPER;
-		if(GuiButton((Rectangle){0, GA.height + 75, 20, 20}, "S")) player.bet = SCISSORS;
+    while(!WindowShouldClose())
+    {
+		// game ends
+        if(checkWinner(objects) != UNDF && !game_end) payout(objects, &player, btn_dialouge, (checkWinner(objects) == player.bet), &game_end);
+        else if(reset && game_end) placeBet(&player, btn_dialouge);
 
 		BeginDrawing();
-			updateObjects(objects);
-			drawObjects(objects);
-			DrawFPS(0, 0);
+            if(checkWinner(objects) == UNDF) updateObjects(objects);
+            drawObjects(objects);
 
-			if((GuiButton((Rectangle){(SCRA.width / 2.0f) - 25, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 50, 50}, btn))) btn_exe(objects);
-			
-			ClearBackground(BLACK);
+            if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 25, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 50, 50}, btn_dialouge))
+			{
+                if((strcmp(btn_dialouge, "START") == 0) && (player.bet != UNDF)) startGame(objects, &reset, &game_end);
+				else if(strcmp(btn_dialouge, "RESET") == 0) setObjects(objects, &reset);
+				else printf("NEED TO BET \n");
+            }
 
-		EndDrawing();
-   }
+            ClearBackground(BLACK);
+        EndDrawing();
+    }
 
-   CloseWindow();
-   return 0;
+    CloseWindow();
+    return 0;
 }
