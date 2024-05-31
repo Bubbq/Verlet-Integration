@@ -11,6 +11,12 @@
 const int FPS = 60;
 const int GAME_AREA = 500;
 const float MIN_BALANCE = 0.10;
+const float TEXT_TIME = 0.50;
+
+const char* NO_BET = "PLACE A BET TO START!";
+const char* NO_MONEY = "NO MONEY TO PLAY!";
+const char* CURR_BET = "CURRENT BET: ";
+
 // screen & game area
 const Rectangle SCRA = {0, 0, 500, 600};
 const Rectangle GA = {0,0, GAME_AREA, GAME_AREA};
@@ -48,6 +54,23 @@ typedef struct
 	float balance;
 	float bet_amount;
 } Player;
+
+typedef struct
+{
+	double startTime;
+	double lifeTime;
+} Timer;
+
+void StartTimer(Timer *timer, double lifetime)
+{
+	timer->startTime = GetTime();
+	timer->lifeTime = lifetime;
+}
+
+bool TimerDone(Timer timer)
+{
+	return GetTime() - timer.startTime >= timer.lifeTime;
+}
 
 // draws all objects on the screen
 void drawObjects(Object objects[OBJ_COUNT])
@@ -220,7 +243,12 @@ void placeBet(Player* player, char btn_dialouge[LIMIT])
 	strcpy(btn_dialouge, "START");
 
 	// choosing bet
-	if(GuiButton((Rectangle){0, GA.height + 5, 20, 20}, "R")) player->bet = ROCK;
+	if(GuiButton((Rectangle){0, GA.height + 5, 20, 20}, "R")) 
+	{
+		player->bet = ROCK;
+
+	}
+	
 	if(GuiButton((Rectangle){30, GA.height + 5, 20, 20}, "P")) player->bet = PAPER;
 	if(GuiButton((Rectangle){60, GA.height + 5, 20, 20}, "S")) player->bet = SCISSORS;
 	
@@ -231,19 +259,17 @@ void placeBet(Player* player, char btn_dialouge[LIMIT])
 	DrawText(bet_amount_dialouge, 0, GA.height + 50, 10, RAYWHITE);
 
 	// choose bet amount with slider
-	GuiSliderBar((Rectangle){0, GA.height + 65, 100, 20}, "", "", &player->bet_amount, 0.10, player->balance);
+	if(player->balance > 0) GuiSliderBar((Rectangle){0, GA.height + 65, 100, 20}, "", "", &player->bet_amount, 0.10, player->balance);
 }
 
 // rewards or punishes player based on bet and bet amount
-void payout(Object objects[OBJ_COUNT], Player* player, char btn_dialouge[LIMIT], bool win, bool* game_end)
+void payout(Player* player, char btn_dialouge[LIMIT], bool win, bool* game_end)
 {
 	if(win) player->balance += (player->bet_amount * 2);
 	else player->balance -= player->bet_amount; 
-	
 	*game_end = true;  
 	player->bet = UNDF;
 	player->bet_amount = (player->balance * 0.20f);
-	strcpy(btn_dialouge, "RESET");
 }
 
 void init(Object objects[OBJ_COUNT], Player* player, bool* reset)
@@ -263,26 +289,61 @@ int main()
 	bool reset = false;
     bool game_end = true;
     char btn_dialouge[LIMIT] = "START";
+	char current_bet_dialouge[LIMIT];
+	
     Player player;
     Object objects[OBJ_COUNT];
+	Timer text_timer;
     init(objects, &player, &reset);
 
     while(!WindowShouldClose())
     {
 		// game ends
-        if(checkWinner(objects) != UNDF && !game_end) payout(objects, &player, btn_dialouge, (checkWinner(objects) == player.bet), &game_end);
+        if(checkWinner(objects) != UNDF && !game_end)
+		{
+			payout(&player, btn_dialouge, (checkWinner(objects) == player.bet), &game_end);
+			strcpy(btn_dialouge, "RESET");
+		}
+
+		// able to place bet after resetting the board
         else if(reset && game_end) placeBet(&player, btn_dialouge);
 
 		BeginDrawing();
             if(checkWinner(objects) == UNDF) updateObjects(objects);
             drawObjects(objects);
 
-            if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 25, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 50, 50}, btn_dialouge))
+			if(game_end && player.balance > 0)
 			{
-                if((strcmp(btn_dialouge, "START") == 0) && (player.bet != UNDF)) startGame(objects, &reset, &game_end);
-				else if(strcmp(btn_dialouge, "RESET") == 0) setObjects(objects, &reset);
-				else printf("NEED TO BET \n");
-            }
+				if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 75, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 150, 50}, btn_dialouge))
+				{
+					if(strcmp(btn_dialouge, "RESET") == 0) setObjects(objects, &reset);
+					else if((strcmp(btn_dialouge, "START") == 0) && (player.bet != UNDF)) startGame(objects, &reset, &game_end);
+					else StartTimer(&text_timer, TEXT_TIME);
+				}
+			}
+
+			else if(player.balance == 0) DrawText(NO_MONEY, (SCRA.width / 2.0f) - (MeasureText(NO_MONEY, 30) / 2.0f), (SCRA.height / 2.0f), 30, RAYWHITE);
+
+			// draw on the bottom what your bet is incase you forgot
+			else
+			{
+				Color c;
+				char cb[LIMIT];
+
+				switch (player.bet) 
+				{
+					case ROCK: sprintf(cb, "%sROCK", CURR_BET); c = RED; break;
+					case PAPER: sprintf(cb, "%sPAPER", CURR_BET); c = YELLOW; break;
+					case SCISSORS: sprintf(cb, "%sSCISSORS", CURR_BET); c = DARKGREEN; break;
+					default:	
+						break;
+				}
+
+				DrawText(cb, (SCRA.width / 2.0f) - (MeasureText(cb, 30) / 2.0f), GA.height + 40, 30, c);
+			}
+
+			// interactive text
+			if(!TimerDone(text_timer)) DrawText(NO_BET, (SCRA.width / 2.0f) - (MeasureText(NO_BET, 30) / 2.0f), (SCRA.height / 2.0f), 30, RAYWHITE);
 
             ClearBackground(BLACK);
         EndDrawing();
