@@ -3844,7 +3844,7 @@ int GuiMessageBox(Rectangle bounds, const char *title, const char *message, cons
     buttonBounds.width = (bounds.width - RAYGUI_MESSAGEBOX_BUTTON_PADDING*(buttonCount + 1))/buttonCount;
     buttonBounds.height = RAYGUI_MESSAGEBOX_BUTTON_HEIGHT;
 
-    int textWidth = GetTextWidth(message) + 2;
+    // int textWidth = GetTextWidth(message) + 2;
 
     Rectangle textBounds = { 0 };
     textBounds.x = bounds.x + RAYGUI_MESSAGEBOX_BUTTON_PADDING;

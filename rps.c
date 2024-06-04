@@ -1,13 +1,12 @@
-#include "raylib.h"
+#include "headers/raylib.h"
+#include <raymath.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <raylib.h>
-#include <raymath.h>
-#include <string.h>
+
 #define LIMIT 1024
 
 #define RAYGUI_IMPLEMENTATION
-#include "raygui.h"
+#include "headers/raygui.h"
 
 const int FPS = 60;
 const float TEXT_TIME = 0.50;

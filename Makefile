@@ -1,5 +1,5 @@
 all:
-	gcc main.c -o run -lraylib -lm -Wall
+	gcc circle.c -o run -lraylib -lm -Wall
 clean:
 	rm run
 	clear
