@@ -1,4 +1,6 @@
 #include "headers/raylib.h"
+#include <raymath.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
@@ -10,6 +12,11 @@ const int MIN_SPEED = 15;
 const int BALL_RADIUS = 10;
 const int SCREEN_SIZE = 700;
 const Vector2 CENTER_POINT = {(SCREEN_SIZE / 2.0f), (SCREEN_SIZE / 2.0f)};
+
+const float GRAV = 500.0f;
+
+// how many seconds a single frame lasts
+float frame_time;
 
 typedef struct
 {
@@ -92,10 +99,43 @@ void addBall(Balls* balls)
 
 void drawBalls(Balls* balls)
 {
-    for(int i = 0; i < balls->size; i++)
+    for(int i = 0; i < balls->size; i++) DrawCircleV(balls->ball[i].pos, BALL_RADIUS, balls->ball[i].col);
+}
+
+void moveBalls(Balls* balls) {
+    for (int i = 0; i < balls->size; i++)
     {
         Ball* ball = &balls->ball[i];
-        DrawCircleV(ball->pos, BALL_RADIUS, ball->col);
+
+        // ball velocity grows by GRAV every second
+        ball->vy += GRAV * frame_time;
+
+        // ball moves by vx/vy px every second
+        ball->pos.y += ball->vy * frame_time;
+        ball->pos.x += ball->vx * frame_time;
+
+        // find the distnace from the center of main circle
+        float dist = Vector2Distance(ball->pos, CENTER_POINT);
+
+        // handle collision when ball touches the edge, refer to VECTOR REFLECTION FORMULA
+        if (dist + BALL_RADIUS >= RADIUS)
+        {
+            // v' = v -2(v * n)n, where v is current vect, and n is normal/unit vect, and v' is new current vect
+            float ba = atan2f((ball->pos.y - CENTER_POINT.y), (ball->pos.x - CENTER_POINT.x));
+            
+            float nx = cosf(ba);
+            float ny = sinf(ba);
+
+            // (v * n), * is dot product, or vx * nx + vy * ny
+            float dp = (ball->vx * nx) + (ball->vy * ny);
+
+            ball->vx -= 2.0f * dp * nx;
+            ball->vy -= 2.0f * dp * ny;
+
+            // so the coordinates of the ball is based of a unit circle that has a radius of radius - ball_radius 
+            ball->pos.x = CENTER_POINT.x + (RADIUS - BALL_RADIUS) * nx;
+            ball->pos.y = CENTER_POINT.y + (RADIUS - BALL_RADIUS) * ny;
+        }
     }
 }
 
@@ -125,7 +165,9 @@ int main()
     while(!WindowShouldClose())
     {
         if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) addBall(&balls);
-
+        frame_time = GetFrameTime();
+        moveBalls(&balls);
+       
         BeginDrawing();
             ClearBackground(BLACK);
             drawBalls(&balls);
