@@ -1,23 +1,22 @@
 #include "headers/raylib.h"
 #include <raymath.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 
-const int FPS = 60;
-const int SCREEN_SIZE = 700;
+#define CHAR_LIMIT 1024
 
-const int MIN_SPEED = 15;
-const int MAX_SPEED = 45;
-const int BALL_RADIUS = 10;
+#define FPS 60
+#define RADIUS 200
+#define SCREEN_SIZE 700
 
-const int RADIUS = 200;
-const Vector2 CENTER_POINT = {(SCREEN_SIZE / 2.0f), (SCREEN_SIZE / 2.0f)};
+#define MIN_SPEED 15
+#define MAX_SPEED 45
+#define BALL_RADIUS 10
 
-const float GRAV = 1000.0f;
-const float ACTIVE_TIME = 3.0f;
-
-// how many seconds a single frame lasts
-float frame_time = (1.0f / FPS);
+#define GRAVITY 1000.0f
+#define ADD_TIME 3.0f
 
 typedef struct
 {
@@ -31,7 +30,6 @@ typedef struct
     float vx, vy;
     Color col;
     bool active;
-    Timer timer;
 } Ball;
 
 typedef struct
@@ -40,6 +38,10 @@ typedef struct
     int size;
     Ball* ball;
 } Balls;
+
+const Vector2 CENTER_POINT = {SCREEN_SIZE / 2.0f, SCREEN_SIZE / 2.0f};
+const float FRAME_TIME = (1.0f / FPS);
+const size_t INIT_CAP = (25 * sizeof(Ball));
 
 void StartTimer(Timer *timer, double lifetime)
 {
@@ -73,14 +75,30 @@ void resizeBalls(Balls* balls)
     balls->ball = realloc(balls->ball, balls->cap);
 }
 
-void addBall(Balls* balls)
+Color randomColor()
+{
+    switch (GetRandomValue(0, 8))
+    {
+        case 0: return WHITE; break;
+        case 1: return RED; break;
+        case 2: return ORANGE; break;
+        case 3: return YELLOW; break;
+        case 4: return GREEN; break;
+        case 5: return BLUE; break;
+        case 6: return VIOLET; break;
+        case 7: return BROWN; break;
+        case 8: return PINK; break;
+        default: return SKYBLUE; break;
+    }
+}
+
+void addBall(Balls* balls, Timer* timer)
 {
     if(balls->size * sizeof(Ball) == balls->cap) resizeBalls(balls);
 
+    // random position not colliding w any ball    
     bool collide;
     Vector2 pos;
-
-    // random position not colliding w any ball    
     do
     {
         collide = false;
@@ -88,30 +106,14 @@ void addBall(Balls* balls)
         for(int i = 0; i < balls->size; i++) if(CheckCollisionCircles(pos, BALL_RADIUS, balls->ball[i].pos, BALL_RADIUS)) collide = true;
     } while(collide);
 
-    // random speed
-    float vx = GetRandomValue(MIN_SPEED, MAX_SPEED);
-
-    // random color
-    Color col;
-    int randcol = GetRandomValue(1, 6);
-
-    switch (randcol)
-    {
-        case 1: col = RED; break;
-        case 2: col = ORANGE; break;
-        case 3: col = YELLOW; break;
-        case 4: col = GREEN; break;
-        case 5: col = BLUE; break;
-        case 6: col = VIOLET; break;
-        default:
-            break;
-    }
+    // freeze current ball
+    balls->ball[balls->size - 1].active = false;
     
-    // add ball to list
-    balls->ball[balls->size] = (Ball){pos, vx, 0, col, true};
+    // add new ball to list
+    balls->ball[balls->size] = (Ball){pos, GetRandomValue(MIN_SPEED, MAX_SPEED), 0, randomColor(), true};
 
-    // start duration of that ball
-    StartTimer(&balls->ball[balls->size].timer, ACTIVE_TIME);
+    // start add timer
+    StartTimer(timer, ADD_TIME);
     
     balls->size++;
 }
@@ -143,39 +145,32 @@ void collide(Ball* ball, Vector2 collision_pos, float radius)
     ball->pos.y = collision_pos.y + (radius * ny);
 }
 
-void handleBallCollision(Balls* balls, Ball* ball)
+void handleBallCollision(Balls* all_balls, Ball* ball)
 {
-    for(int j = 0; j < balls->size; j++)
+    for(int j = 0; j < all_balls->size; j++)
     {
-        // only unactive balls are frozen in place
-        Ball* ball2 = &balls->ball[j];
+        // unactive balls are frozen in place
+        Ball* ball2 = &all_balls->ball[j];
         if(ball2->active) continue;
         
         if(CheckCollisionCircles(ball->pos, BALL_RADIUS, ball2->pos, BALL_RADIUS)) collide(ball, ball2->pos, (BALL_RADIUS * 2.0f));
     }
 }
 
-void moveBalls(Balls* balls) {
-    for (int i = 0; i < balls->size; i++)
-    {
-        // only care about active balls
-        Ball* ball = &balls->ball[i];
-        ball->active = !TimerDone(ball->timer);
-        if(!ball->active) continue;
+void moveBall(Balls* all_balls, Ball* ball)
+{
+    // ball velocity grows by GRAV every second
+    ball->vy += (GRAVITY * FRAME_TIME);
 
-        // ball velocity grows by GRAV every second
-        ball->vy += GRAV * frame_time;
+    // ball moves by vx/vy pixels every second
+    ball->pos.y += (ball->vy * FRAME_TIME);
+    ball->pos.x += (ball->vx * FRAME_TIME);
 
-        // ball moves by vx/vy pixels every second
-        ball->pos.y += ball->vy * frame_time;
-        ball->pos.x += ball->vx * frame_time;
-        
-        // edge of circle collision
-        if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
-
-        // ball collision
-        handleBallCollision(balls, ball);
-    }
+    // ball collision
+    handleBallCollision(all_balls, ball);
+    
+    // edge of circle collision
+    if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
 }
 
 void init(Balls* balls)
@@ -183,36 +178,47 @@ void init(Balls* balls)
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
     InitWindow(SCREEN_SIZE, SCREEN_SIZE, "Circle");
-
+    
     balls->size = 0;
-    balls->cap = 25 * sizeof(Ball);
+    balls->cap = INIT_CAP;
     balls->ball = malloc(balls->cap);
 }
 
-void deinit(Balls* balls)
+void deinit(Ball* alloc_ball_mem)
 {
-    free(balls->ball);
+    free(alloc_ball_mem);
     CloseWindow();
 }
 
 int main()
 {
     Balls balls;
+    Timer add_timer;
+    char ball_count[CHAR_LIMIT];
+    
     init(&balls);
-
+    
     while(!WindowShouldClose())
     {
-        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) addBall(&balls);
-        moveBalls(&balls);
+        // moves the current ball
+        if(balls.size > 0) moveBall(&balls, &balls.ball[balls.size - 1]);
+        
+        // adds ball every ADD_TIME seconds
+        if(TimerDone(add_timer)) 
+        {
+            addBall(&balls, &add_timer);
+            sprintf(ball_count, "BALL COUNT: %d", balls.size);
+        }
 
         BeginDrawing();
             drawBalls(&balls);
             DrawFPS(0, 0);
             ClearBackground(BLACK);
             DrawCircleLinesV(CENTER_POINT, RADIUS, LIME);
+            DrawText(ball_count, 0, 15, 19, LIME);
         EndDrawing();
     }
 
-    deinit(&balls);
+    deinit(balls.ball);
     return 0;
 }
