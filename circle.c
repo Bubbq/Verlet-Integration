@@ -1,28 +1,37 @@
 #include "headers/raylib.h"
 #include <raymath.h>
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
-#include <time.h>
-#include <math.h>
 
 const int FPS = 60;
-const int RADIUS = 200;
-const int MAX_SPEED = 45;
-const int MIN_SPEED = 15;
-const int BALL_RADIUS = 10;
 const int SCREEN_SIZE = 700;
+
+const int MIN_SPEED = 15;
+const int MAX_SPEED = 45;
+const int BALL_RADIUS = 10;
+
+const int RADIUS = 200;
 const Vector2 CENTER_POINT = {(SCREEN_SIZE / 2.0f), (SCREEN_SIZE / 2.0f)};
 
-const float GRAV = 500.0f;
+const float GRAV = 1000.0f;
+const float ACTIVE_TIME = 3.0f;
 
 // how many seconds a single frame lasts
-float frame_time;
+float frame_time = (1.0f / FPS);
+
+typedef struct
+{
+   double startTime;
+   double lifeTime;
+} Timer;
 
 typedef struct
 {
     Vector2 pos;
     float vx, vy;
     Color col;
+    bool active;
+    Timer timer;
 } Ball;
 
 typedef struct
@@ -31,6 +40,17 @@ typedef struct
     int size;
     Ball* ball;
 } Balls;
+
+void StartTimer(Timer *timer, double lifetime)
+{
+   timer->startTime = GetTime();
+   timer->lifeTime = lifetime;
+}
+
+bool TimerDone(Timer timer)
+{
+   return GetTime() - timer.startTime >= timer.lifeTime;
+}
 
 Vector2 getRandomCirclePosition()
 {
@@ -57,44 +77,43 @@ void addBall(Balls* balls)
 {
     if(balls->size * sizeof(Ball) == balls->cap) resizeBalls(balls);
 
-    else 
+    bool collide;
+    Vector2 pos;
+
+    // random position not colliding w any ball    
+    do
     {
-        bool collide;
-        Vector2 pos;
-       
-        do
-        {
-            collide = false;
-            pos = getRandomCirclePosition();
+        collide = false;
+        pos = getRandomCirclePosition();
+        for(int i = 0; i < balls->size; i++) if(CheckCollisionCircles(pos, BALL_RADIUS, balls->ball[i].pos, BALL_RADIUS)) collide = true;
+    } while(collide);
 
-            for(int i = 0; i < balls->size; i++)
-            {
-                Ball* ball = &balls->ball[i];
-                if(CheckCollisionCircles(pos, BALL_RADIUS, ball->pos, BALL_RADIUS)) collide = true;
-            }
-        } while(collide);
+    // random speed
+    float vx = GetRandomValue(MIN_SPEED, MAX_SPEED);
 
-        // random speed
-        float vx = GetRandomValue(MIN_SPEED, MAX_SPEED);
+    // random color
+    Color col;
+    int randcol = GetRandomValue(1, 6);
 
-        // random color
-        Color col;
-        int randcol = GetRandomValue(1, 6);
-
-        switch (randcol)
-        {
-            case 1: col = RED; break;
-            case 2: col = ORANGE; break;
-            case 3: col = YELLOW; break;
-            case 4: col = GREEN; break;
-            case 5: col = BLUE; break;
-            case 6: col = VIOLET; break;
-            default:
-                break;
-        }
-
-        balls->ball[balls->size++] = (Ball){pos, vx, 0, col};
+    switch (randcol)
+    {
+        case 1: col = RED; break;
+        case 2: col = ORANGE; break;
+        case 3: col = YELLOW; break;
+        case 4: col = GREEN; break;
+        case 5: col = BLUE; break;
+        case 6: col = VIOLET; break;
+        default:
+            break;
     }
+    
+    // add ball to list
+    balls->ball[balls->size] = (Ball){pos, vx, 0, col, true};
+
+    // start duration of that ball
+    StartTimer(&balls->ball[balls->size].timer, ACTIVE_TIME);
+    
+    balls->size++;
 }
 
 void drawBalls(Balls* balls)
@@ -102,47 +121,66 @@ void drawBalls(Balls* balls)
     for(int i = 0; i < balls->size; i++) DrawCircleV(balls->ball[i].pos, BALL_RADIUS, balls->ball[i].col);
 }
 
+// uses VECTOR REFLECTION FORMULA, v' = v -2(v * n)n, to handle collision between a ball at some point
+void collide(Ball* ball, Vector2 collision_pos, float radius)
+{
+    // collision angle (in radians)
+    float ca = atan2f((ball->pos.y - collision_pos.y), (ball->pos.x - collision_pos.x));
+
+    // components of normal vector
+    float nx = cosf(ca);
+    float ny = sinf(ca);
+
+    // (v * n), dot product, or vx * nx + vy * ny
+    float dp = (ball->vx * nx) + (ball->vy * ny);
+
+    // calculating v'
+    ball->vx -= (2 * dp * nx);
+    ball->vy -= (2 * dp * ny);
+
+    // position correction
+    ball->pos.x = collision_pos.x + (radius * nx);
+    ball->pos.y = collision_pos.y + (radius * ny);
+}
+
+void handleBallCollision(Balls* balls, Ball* ball)
+{
+    for(int j = 0; j < balls->size; j++)
+    {
+        // only unactive balls are frozen in place
+        Ball* ball2 = &balls->ball[j];
+        if(ball2->active) continue;
+        
+        if(CheckCollisionCircles(ball->pos, BALL_RADIUS, ball2->pos, BALL_RADIUS)) collide(ball, ball2->pos, (BALL_RADIUS * 2.0f));
+    }
+}
+
 void moveBalls(Balls* balls) {
     for (int i = 0; i < balls->size; i++)
     {
+        // only care about active balls
         Ball* ball = &balls->ball[i];
+        ball->active = !TimerDone(ball->timer);
+        if(!ball->active) continue;
 
         // ball velocity grows by GRAV every second
         ball->vy += GRAV * frame_time;
 
-        // ball moves by vx/vy px every second
+        // ball moves by vx/vy pixels every second
         ball->pos.y += ball->vy * frame_time;
         ball->pos.x += ball->vx * frame_time;
+        
+        // edge of circle collision
+        if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
 
-        // find the distnace from the center of main circle
-        float dist = Vector2Distance(ball->pos, CENTER_POINT);
-
-        // handle collision when ball touches the edge, refer to VECTOR REFLECTION FORMULA
-        if (dist + BALL_RADIUS >= RADIUS)
-        {
-            // v' = v -2(v * n)n, where v is current vect, and n is normal/unit vect, and v' is new current vect
-            float ba = atan2f((ball->pos.y - CENTER_POINT.y), (ball->pos.x - CENTER_POINT.x));
-            
-            float nx = cosf(ba);
-            float ny = sinf(ba);
-
-            // (v * n), * is dot product, or vx * nx + vy * ny
-            float dp = (ball->vx * nx) + (ball->vy * ny);
-
-            ball->vx -= 2.0f * dp * nx;
-            ball->vy -= 2.0f * dp * ny;
-
-            // so the coordinates of the ball is based of a unit circle that has a radius of radius - ball_radius 
-            ball->pos.x = CENTER_POINT.x + (RADIUS - BALL_RADIUS) * nx;
-            ball->pos.y = CENTER_POINT.y + (RADIUS - BALL_RADIUS) * ny;
-        }
+        // ball collision
+        handleBallCollision(balls, ball);
     }
 }
 
 void init(Balls* balls)
 {
     SetTargetFPS(FPS);
-    srand(time(NULL));
     SetTraceLogLevel(LOG_ERROR);
     InitWindow(SCREEN_SIZE, SCREEN_SIZE, "Circle");
 
@@ -165,12 +203,12 @@ int main()
     while(!WindowShouldClose())
     {
         if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) addBall(&balls);
-        frame_time = GetFrameTime();
         moveBalls(&balls);
-       
+
         BeginDrawing();
-            ClearBackground(BLACK);
             drawBalls(&balls);
+            DrawFPS(0, 0);
+            ClearBackground(BLACK);
             DrawCircleLinesV(CENTER_POINT, RADIUS, LIME);
         EndDrawing();
     }
