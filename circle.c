@@ -1,22 +1,13 @@
 #include "headers/raylib.h"
+#include <math.h>
 #include <raymath.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 
+#define RAYGUI_IMPLEMENTATION
+#include "headers/raygui.h"
+
 #define CHAR_LIMIT 1024
-
-#define FPS 60
-#define RADIUS 200
-#define SCREEN_SIZE 700
-
-#define MIN_SPEED 15
-#define MAX_SPEED 45
-#define BALL_RADIUS 10
-
-#define GRAVITY 1000.0f
-#define ADD_TIME 3.0f
 
 typedef struct
 {
@@ -39,9 +30,33 @@ typedef struct
     Ball* ball;
 } Balls;
 
-const Vector2 CENTER_POINT = {SCREEN_SIZE / 2.0f, SCREEN_SIZE / 2.0f};
+enum Gamestate
+{
+   ACTIVE = 0,
+   DONE = 1,
+   READY = 2,
+   QUIT = 3,
+};
+
+const int RADIUS = 150;
+const int SCREEN_SIZE = 700;
+
+const float ADD_TIME = 3.0f;
+const float GRAVITY = 1000.0f;
+
+const int MIN_SPEED = 15;
+const int MAX_SPEED = 45;
+const int BALL_RADIUS = 10;
+
+const int FPS = 60;
 const float FRAME_TIME = (1.0f / FPS);
+
+const Vector2 CENTER_POINT = {SCREEN_SIZE / 2.0f, SCREEN_SIZE / 2.0f};
 const size_t INIT_CAP = (25 * sizeof(Ball));
+
+Balls all_balls;
+Timer add_timer;
+enum Gamestate game_state;
 
 void StartTimer(Timer *timer, double lifetime)
 {
@@ -69,13 +84,7 @@ Vector2 getRandomCirclePosition()
     return (Vector2){x, y};
 }
 
-void resizeBalls(Balls* balls)
-{
-    balls->cap *= 2;
-    balls->ball = realloc(balls->ball, balls->cap);
-}
-
-Color randomColor()
+Color getRandomColor()
 {
     switch (GetRandomValue(0, 8))
     {
@@ -92,9 +101,32 @@ Color randomColor()
     }
 }
 
-void addBall(Balls* balls, Timer* timer)
+float getAngle(Vector2 v1, Vector2 v2)
 {
-    if(balls->size * sizeof(Ball) == balls->cap) resizeBalls(balls);
+	float angle = atan2f((v1.y - v2.y), (v1.x - v2.x)) * RAD2DEG;
+	
+	if(angle > 360) angle -= 360;
+	else if(angle < 0) angle += 360;
+
+	return angle;
+}
+
+void resizeBalls()
+{
+    all_balls.cap *= 2;
+    all_balls.ball = realloc(all_balls.ball, all_balls.cap);
+}
+
+void resetBalls()
+{
+    all_balls.size = 0;
+    all_balls.cap = INIT_CAP;
+    free(all_balls.ball);
+}
+
+void addBall()
+{
+    if(all_balls.size * sizeof(Ball) == all_balls.cap) resizeBalls();
 
     // random position not colliding w any ball    
     bool collide;
@@ -103,61 +135,70 @@ void addBall(Balls* balls, Timer* timer)
     {
         collide = false;
         pos = getRandomCirclePosition();
-        for(int i = 0; i < balls->size; i++) if(CheckCollisionCircles(pos, BALL_RADIUS, balls->ball[i].pos, BALL_RADIUS)) collide = true;
+        for(int i = 0; i < all_balls.size; i++) if(CheckCollisionCircles(pos, BALL_RADIUS, all_balls.ball[i].pos, BALL_RADIUS)) collide = true;
     } while(collide);
 
     // freeze current ball
-    balls->ball[balls->size - 1].active = false;
+    all_balls.ball[all_balls.size - 1].active = false;
     
     // add new ball to list
-    balls->ball[balls->size] = (Ball){pos, GetRandomValue(MIN_SPEED, MAX_SPEED), 0, randomColor(), true};
+    all_balls.ball[all_balls.size++] = (Ball){pos, GetRandomValue(MIN_SPEED, MAX_SPEED), 0, getRandomColor(), true};
 
-    // start add timer
-    StartTimer(timer, ADD_TIME);
-    
-    balls->size++;
+    StartTimer(&add_timer, ADD_TIME);
 }
 
-void drawBalls(Balls* balls)
+void drawBalls()
 {
-    for(int i = 0; i < balls->size; i++) DrawCircleV(balls->ball[i].pos, BALL_RADIUS, balls->ball[i].col);
+    for(int i = 0; i < all_balls.size; i++) DrawCircleV(all_balls.ball[i].pos, BALL_RADIUS, all_balls.ball[i].col);
 }
 
 // uses VECTOR REFLECTION FORMULA, v' = v -2(v * n)n, to handle collision between a ball at some point
 void collide(Ball* ball, Vector2 collision_pos, float radius)
 {
-    // collision angle (in radians)
-    float ca = atan2f((ball->pos.y - collision_pos.y), (ball->pos.x - collision_pos.x));
+    // collision angle
+    float ca = getAngle(ball->pos, collision_pos);
 
-    // components of normal vector
-    float nx = cosf(ca);
-    float ny = sinf(ca);
+    // the unit vector of collision 
+    Vector2 n = {cosf(ca * DEG2RAD), sinf(ca * DEG2RAD)};
 
-    // (v * n), dot product, or vx * nx + vy * ny
-    float dp = (ball->vx * nx) + (ball->vy * ny);
+    // (v * n), the dot product between the current velocity and the normal vector
+    float dp = Vector2DotProduct((Vector2){ball->vx, ball->vy}, n);
 
     // calculating v'
-    ball->vx -= (2 * dp * nx);
-    ball->vy -= (2 * dp * ny);
+    ball->vx -= (2 * dp * n.x);
+    ball->vy -= (2 * dp * n.y);
 
     // position correction
-    ball->pos.x = collision_pos.x + (radius * nx);
-    ball->pos.y = collision_pos.y + (radius * ny);
+    ball->pos.x = collision_pos.x + (radius * n.x);
+    ball->pos.y = collision_pos.y + (radius * n.y);
 }
 
-void handleBallCollision(Balls* all_balls, Ball* ball)
+void handleBallCollision(Ball* ball)
 {
-    for(int j = 0; j < all_balls->size; j++)
+    for(int i = 0; i < all_balls.size; i++)
     {
-        // unactive balls are frozen in place
-        Ball* ball2 = &all_balls->ball[j];
-        if(ball2->active) continue;
+        // prevent colliding with itself
+        Ball* ball2 = &all_balls.ball[i];
+        if(Vector2Equals(ball->pos, ball2->pos)) continue;
         
         if(CheckCollisionCircles(ball->pos, BALL_RADIUS, ball2->pos, BALL_RADIUS)) collide(ball, ball2->pos, (BALL_RADIUS * 2.0f));
     }
 }
 
-void moveBall(Balls* all_balls, Ball* ball)
+void handleBorderCollision(Ball* ball)
+{
+    float ca = getAngle(ball->pos, CENTER_POINT);
+
+    if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS)
+    {
+        if(ca <= 315) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
+
+        // ball leaves the sector, the game is done
+        else game_state = DONE;
+    }
+}
+
+void moveBall(Ball* ball)
 {
     // ball velocity grows by GRAV every second
     ball->vy += (GRAVITY * FRAME_TIME);
@@ -167,58 +208,86 @@ void moveBall(Balls* all_balls, Ball* ball)
     ball->pos.x += (ball->vx * FRAME_TIME);
 
     // ball collision
-    handleBallCollision(all_balls, ball);
+    handleBallCollision(ball);
     
-    // edge of circle collision
-    if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
+    // ball hitting the circle's edges
+    handleBorderCollision(ball);
 }
 
-void init(Balls* balls)
+void init()
 {
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
     InitWindow(SCREEN_SIZE, SCREEN_SIZE, "Circle");
     
-    balls->size = 0;
-    balls->cap = INIT_CAP;
-    balls->ball = malloc(balls->cap);
+    all_balls.size = 0;
+    all_balls.cap = INIT_CAP;
+    all_balls.ball = malloc(all_balls.cap);
+    
+    game_state = ACTIVE;
 }
 
 void deinit(Ball* alloc_ball_mem)
 {
-    free(alloc_ball_mem);
+    if(all_balls.size > 0) free(alloc_ball_mem);
     CloseWindow();
 }
 
 int main()
 {
-    Balls balls;
-    Timer add_timer;
-    char ball_count[CHAR_LIMIT];
-    
-    init(&balls);
-    
-    while(!WindowShouldClose())
-    {
-        // moves the current ball
-        if(balls.size > 0) moveBall(&balls, &balls.ball[balls.size - 1]);
-        
-        // adds ball every ADD_TIME seconds
-        if(TimerDone(add_timer)) 
-        {
-            addBall(&balls, &add_timer);
-            sprintf(ball_count, "BALL COUNT: %d", balls.size);
-        }
+    init();
+    char ball_count_dialouge[CHAR_LIMIT] = "";
 
+    while((game_state != QUIT) && !WindowShouldClose())
+    {
+        int cidx = (all_balls.size == 0) ? 0 : all_balls.size - 1;
+        Ball* current_ball = &all_balls.ball[cidx];
+       
         BeginDrawing();
-            drawBalls(&balls);
-            DrawFPS(0, 0);
             ClearBackground(BLACK);
-            DrawCircleLinesV(CENTER_POINT, RADIUS, LIME);
-            DrawText(ball_count, 0, 15, 19, LIME);
+
+            DrawCircleSectorLines(CENTER_POINT, RADIUS, 0, 315, 1, LIME);
+            DrawCircleV(CENTER_POINT, RADIUS - 1, BLACK);
+
+            DrawText(ball_count_dialouge, 0, 15, 19, LIME);
+            DrawFPS(0, 0);
+            drawBalls();
+
+            sprintf(ball_count_dialouge, "BALL COUNT: %d", all_balls.size);
+
+            switch (game_state)
+            {
+                case ACTIVE:
+                    if(TimerDone(add_timer))
+                    {
+                        addBall();
+                        StartTimer(&add_timer, ADD_TIME);
+                    }
+                    if(all_balls.size > 0) moveBall(current_ball);
+                    break;
+                case DONE:
+                    if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "OK")) 
+                    {
+                        resetBalls();
+                        game_state = READY;
+                    }
+                    break;
+                case READY: 
+                    // TODO: display wether player won or not
+                    // TODO: code for placing bet
+                    // button to start the game
+                    if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "START")) 
+                    {
+                        game_state = ACTIVE;
+                    }
+                    break;
+                default:
+                    break;
+            }
+
         EndDrawing();
     }
 
-    deinit(balls.ball);
+    deinit(all_balls.ball);
     return 0;
 }
