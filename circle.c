@@ -2,6 +2,7 @@
 #include <math.h>
 #include <raymath.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #define RAYGUI_IMPLEMENTATION
@@ -44,8 +45,8 @@ const int SCREEN_SIZE = 700;
 const float ADD_TIME = 3.0f;
 const float GRAVITY = 1000.0f;
 
-const int MIN_SPEED = 15;
-const int MAX_SPEED = 45;
+const int MIN_SPEED = 100;
+const int MAX_SPEED = 500;
 const int BALL_RADIUS = 10;
 
 const int FPS = 60;
@@ -75,7 +76,7 @@ Vector2 getRandomCirclePosition()
     float theta = GetRandomValue(0, 360);
     
     // random distance from center point of main circle
-    float r = GetRandomValue(1, RADIUS - (BALL_RADIUS * 2.0f));
+    float r = GetRandomValue(1, (RADIUS - BALL_RADIUS));
     
     // get x and y distance of that angle in proportion to r
     float x  = CENTER_POINT.x + (cos(theta * DEG2RAD) * r);
@@ -103,7 +104,7 @@ Color getRandomColor()
 
 float getAngle(Vector2 v1, Vector2 v2)
 {
-	float angle = atan2f((v1.y - v2.y), (v1.x - v2.x)) * RAD2DEG;
+	float angle = (atan2f((v1.y - v2.y), (v1.x - v2.x)) * RAD2DEG);
 	
 	if(angle > 360) angle -= 360;
 	else if(angle < 0) angle += 360;
@@ -122,6 +123,7 @@ void resetBalls()
     all_balls.size = 0;
     all_balls.cap = INIT_CAP;
     free(all_balls.ball);
+    all_balls.ball = malloc(INIT_CAP);
 }
 
 void addBall()
@@ -185,20 +187,19 @@ void handleBallCollision(Ball* ball)
     }
 }
 
-void handleBorderCollision(Ball* ball)
+void handleBorderCollision(Ball* ball, float start_angle, float end_angle)
 {
     float ca = getAngle(ball->pos, CENTER_POINT);
-
     if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS)
     {
-        if(ca <= 315) collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
+        // ball left the sector, the game is done
+        if((ca >= start_angle) && (ca <= end_angle)) game_state = DONE;
 
-        // ball leaves the sector, the game is done
-        else game_state = DONE;
+        else collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
     }
 }
 
-void moveBall(Ball* ball)
+void moveBall(Ball* ball, float start_angle, float end_angle)
 {
     // ball velocity grows by GRAV every second
     ball->vy += (GRAVITY * FRAME_TIME);
@@ -211,10 +212,16 @@ void moveBall(Ball* ball)
     handleBallCollision(ball);
     
     // ball hitting the circle's edges
-    handleBorderCollision(ball);
+    handleBorderCollision(ball, start_angle, end_angle);
 }
 
-void init()
+void getRandomCircleSectorAngle(float* min, float* max)
+{
+    *min = GetRandomValue(200, 300);
+    *max = *min + 45;
+}
+
+void init(float* start_angle, float* end_angle)
 {
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
@@ -222,38 +229,43 @@ void init()
     
     all_balls.size = 0;
     all_balls.cap = INIT_CAP;
-    all_balls.ball = malloc(all_balls.cap);
+    all_balls.ball = malloc(INIT_CAP);
     
-    game_state = ACTIVE;
+    game_state = READY;
+
+    getRandomCircleSectorAngle(start_angle, end_angle);
 }
 
 void deinit(Ball* alloc_ball_mem)
 {
-    if(all_balls.size > 0) free(alloc_ball_mem);
+    free(alloc_ball_mem);
     CloseWindow();
 }
 
 int main()
 {
-    init();
     char ball_count_dialouge[CHAR_LIMIT] = "";
+    float start_angle = 0;
+    float end_angle = 0;
+
+    init(&start_angle, &end_angle);
 
     while((game_state != QUIT) && !WindowShouldClose())
     {
         int cidx = (all_balls.size == 0) ? 0 : all_balls.size - 1;
         Ball* current_ball = &all_balls.ball[cidx];
-       
+
+        sprintf(ball_count_dialouge, "BALL COUNT: %d", all_balls.size);
+
         BeginDrawing();
             ClearBackground(BLACK);
 
-            DrawCircleSectorLines(CENTER_POINT, RADIUS, 0, 315, 1, LIME);
-            DrawCircleV(CENTER_POINT, RADIUS - 1, BLACK);
+            DrawCircleLinesV(CENTER_POINT, RADIUS, LIME);
+            DrawCircleSector(CENTER_POINT, RADIUS + 2, start_angle, end_angle, 3, BLACK);
 
             DrawText(ball_count_dialouge, 0, 15, 19, LIME);
             DrawFPS(0, 0);
             drawBalls();
-
-            sprintf(ball_count_dialouge, "BALL COUNT: %d", all_balls.size);
 
             switch (game_state)
             {
@@ -262,13 +274,14 @@ int main()
                     {
                         addBall();
                         StartTimer(&add_timer, ADD_TIME);
-                    }
-                    if(all_balls.size > 0) moveBall(current_ball);
+                    }    
+                    if(all_balls.size > 0) moveBall(current_ball, start_angle, end_angle);
                     break;
                 case DONE:
                     if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "OK")) 
                     {
                         resetBalls();
+                        getRandomCircleSectorAngle(&start_angle, &end_angle);
                         game_state = READY;
                     }
                     break;
@@ -276,10 +289,7 @@ int main()
                     // TODO: display wether player won or not
                     // TODO: code for placing bet
                     // button to start the game
-                    if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "START")) 
-                    {
-                        game_state = ACTIVE;
-                    }
+                    if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "START")) game_state = ACTIVE;
                     break;
                 default:
                     break;
