@@ -36,13 +36,12 @@ enum Gamestate
    ACTIVE = 0,
    DONE = 1,
    READY = 2,
-   QUIT = 3,
 };
 
 typedef struct
 {
    float ball_bet;
-   float bet_amount;
+   int bet_amount;
    float balance;
 } Player;
 
@@ -52,8 +51,8 @@ const int SCREEN_SIZE = 700;
 const float ADD_TIME = 3.0f;
 const float GRAVITY = 1000.0f;
 
-const int MIN_SPEED = 100;
-const int MAX_SPEED = 500;
+const int MIN_SPEED = 500;
+const int MAX_SPEED = 1000;
 const int BALL_RADIUS = 10;
 
 const int FPS = 60;
@@ -66,7 +65,10 @@ const char* BET_TITLE = "BETTING INFO:";
 const char* CURR_BALANCE = "-> BALANCE:";
 const char* CURR_BET_AMOUNT = "-> BET AMOUNT:";
 const char* BALL_BET = "-> NUMBER OF BALLS UNTIL EXIT";
+const char* LOSE = "YOU LOST:";
+const char* WIN = "YOU WIN:";
 
+Player player;
 Balls all_balls;
 Timer add_timer;
 enum Gamestate game_state;
@@ -198,13 +200,22 @@ void handleBallCollision(Ball* ball)
     }
 }
 
+void payout(bool win)
+{   
+    if(win) player.balance += (player.bet_amount * 2);
+    else player.balance -= player.bet_amount;
+}
+
 void handleBorderCollision(Ball* ball, float start_angle, float end_angle)
 {
     float ca = getAngle(ball->pos, CENTER_POINT);
     if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS)
     {
-        // ball left the sector, the game is done
-        if((ca >= start_angle) && (ca <= end_angle)) game_state = DONE;
+        if((ca >= start_angle) && (ca <= end_angle))
+        {
+            game_state = DONE;
+            payout((player.ball_bet == all_balls.size));
+        }
         else collide(ball, CENTER_POINT, (RADIUS - BALL_RADIUS));
     }
 }
@@ -231,15 +242,15 @@ void getRandomCircleSectorAngle(float* min, float* max)
     *max = *min + 45;
 }
 
-void placeBet(Player* player)
+void placeBet()
 {
     char balance[CHAR_LIMIT];
     char ball_bet[CHAR_LIMIT];
     char bet_amount[CHAR_LIMIT];
 
-    sprintf(ball_bet, "%.0f", player->ball_bet);
-    sprintf(balance, "%s $%.2f", CURR_BALANCE, player->balance);
-    sprintf(bet_amount, "%s $%.2f", CURR_BET_AMOUNT, player->bet_amount);
+    sprintf(ball_bet, "%.0f", player.ball_bet);
+    sprintf(balance, "%s $%.2f", CURR_BALANCE, player.balance);
+    sprintf(bet_amount, "%s $%d", CURR_BET_AMOUNT, player.bet_amount);
 
     // displaying current betting information
     DrawText(BET_TITLE, 0, 55, 20, LIME);
@@ -247,19 +258,30 @@ void placeBet(Player* player)
     DrawText(balance, 0, 75, 15, LIME);
 
     // choosing how many balls will it take to leave the circle
-    const Rectangle SLIDER = {MeasureText(BALL_BET, 15) + 10, 90, 100, 12};
-    GuiSliderBar(SLIDER, "", "", &player->ball_bet, 1, 100);
+    const Rectangle SLIDER = {MeasureText(BALL_BET, 15) + 5, 90, 100, 12};
+    GuiSliderBar(SLIDER, "", "", &player.ball_bet, 1, 100);
     DrawText(ball_bet, 365, 90, 15, LIME);
 
     // changing amount of money to bet with
     DrawText(bet_amount, 0, 105, 15, LIME);
     const Rectangle INC_BTN = {MeasureText(bet_amount, 15) + 10, 105, 15, 15};
     const Rectangle DEC_BTN = {MeasureText(bet_amount, 15) + 30, 105, 15, 15};
-    if(GuiButton(INC_BTN, "+") && (player->bet_amount + 5 <= player->balance)) player->bet_amount += 5;
-    if(GuiButton(DEC_BTN, "-") && (player->bet_amount - 5 > 0)) player->bet_amount -= 5;
+    if(GuiButton(INC_BTN, "+") && (player.bet_amount + 5 <= player.balance)) player.bet_amount += 5;
+    if(GuiButton(DEC_BTN, "-") && (player.bet_amount - 5 > 0)) player.bet_amount -= 5;
 }
 
-void init(Player* player, float* start_angle, float* end_angle)
+void displayResult(bool win)
+{
+    // result dialouge
+    char rd[CHAR_LIMIT];
+
+    if(win) sprintf(rd, "%s $%d!", WIN, (player.bet_amount * 2));
+    else sprintf(rd, "%s $%d!", LOSE, player.bet_amount);
+    
+    DrawText(rd, CENTER_POINT.x - (MeasureText(rd, 20) / 2.0f), CENTER_POINT.y, 20, (win ? GREEN : MAROON));
+}
+
+void init(float* start_angle, float* end_angle)
 {
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
@@ -271,9 +293,9 @@ void init(Player* player, float* start_angle, float* end_angle)
     
     game_state = READY;
 
-    player->ball_bet = 0.0f;
-    player->balance = 100.0f;
-    player->bet_amount = 20.0f;
+    player.ball_bet = 0.0f;
+    player.balance = 100.0f;
+    player.bet_amount = 20.0f;
 
     getRandomCircleSectorAngle(start_angle, end_angle);
 }
@@ -289,9 +311,8 @@ int main()
     char ball_count_dialouge[CHAR_LIMIT];
     float start_angle;
     float end_angle;
-    Player player;
 
-    init(&player, &start_angle, &end_angle);
+    init(&start_angle, &end_angle);
 
     while(!WindowShouldClose())
     {
@@ -321,6 +342,7 @@ int main()
                     if(all_balls.size > 0) moveBall(current_ball, start_angle, end_angle);
                     break;
                 case DONE:
+                    displayResult((player.ball_bet == all_balls.size));
                     if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "OK")) 
                     {
                         resetBalls();
@@ -330,8 +352,7 @@ int main()
                     }
                     break;
                 case READY: 
-                    // TODO: display wether player won or not
-                    placeBet(&player);
+                    placeBet();
                     if(GuiButton((Rectangle){(SCREEN_SIZE / 2.0f) - 50, (SCREEN_SIZE - 150), 100, 50}, "START")) game_state = ACTIVE;
                     break;
                 default:
