@@ -1,5 +1,4 @@
 #include "headers/raylib.h"
-#include <math.h>
 #include <raymath.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -51,8 +50,8 @@ const int SCREEN_SIZE = 700;
 const float ADD_TIME = 3.0f;
 const float GRAVITY = 1000.0f;
 
-const int MIN_SPEED = 500;
-const int MAX_SPEED = 1000;
+const int MIN_SPEED = 100;
+const int MAX_SPEED = 500;
 const int BALL_RADIUS = 10;
 
 const int FPS = 60;
@@ -90,7 +89,7 @@ Vector2 getRandomCirclePosition()
     float theta = GetRandomValue(0, 360);
     
     // random distance from center point of main circle
-    float r = GetRandomValue(1, (RADIUS - BALL_RADIUS));
+    float r = GetRandomValue(1, (RADIUS - (BALL_RADIUS * 2.0f)));
     
     // get x and y distance of that angle in proportion to r
     float x  = CENTER_POINT.x + (cos(theta * DEG2RAD) * r);
@@ -193,8 +192,8 @@ void handleBallCollision(Ball* ball)
 {
     for(int i = 0; i < all_balls.size; i++)
     {
-        // prevent colliding with itself
         Ball* ball2 = &all_balls.ball[i];
+        // prevent colliding with itself
         if(Vector2Equals(ball->pos, ball2->pos)) continue;
         if(CheckCollisionCircles(ball->pos, BALL_RADIUS, ball2->pos, BALL_RADIUS)) collide(ball, ball2->pos, (BALL_RADIUS * 2.0f));
     }
@@ -211,6 +210,7 @@ void handleBorderCollision(Ball* ball, float start_angle, float end_angle)
     float ca = getAngle(ball->pos, CENTER_POINT);
     if (Vector2Distance(ball->pos, CENTER_POINT) + BALL_RADIUS >= RADIUS)
     {
+        // game is over
         if((ca >= start_angle) && (ca <= end_angle))
         {
             game_state = DONE;
