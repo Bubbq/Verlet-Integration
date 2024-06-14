@@ -259,7 +259,7 @@ void placeBet()
 
     // choosing how many balls will it take to leave the circle
     const Rectangle SLIDER = {MeasureText(BALL_BET, 15) + 5, 90, 100, 12};
-    GuiSliderBar(SLIDER, "", "", &player.ball_bet, 1, 100);
+    GuiSliderBar(SLIDER, "", "", &player.ball_bet, 1, 30);
     DrawText(ball_bet, 365, 90, 15, LIME);
 
     // changing amount of money to bet with

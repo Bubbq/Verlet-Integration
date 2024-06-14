@@ -3,6 +3,9 @@
 #include "headers/raylib.h"
 #include <raymath.h>
 
+#define RAYGUI_IMPLEMENTATION
+#include "headers/raygui.h"
+
 #define CHAR_LIMIT 1024
 
 typedef struct
@@ -41,14 +44,17 @@ typedef struct
 } Boxes;
 
 const float ADD_TIME = 0.25f;
-const int FPS = 60;
-const int TOP_LEVEL = 3;
-const int RADIUS_GAME = 11;
-const int RADIUS_BOARD = 8;
-const int LEVELS = 10;
-const int BALL_DIST = 48;
+
 const int SCREEN_SIZE = 1000;
+
+const int LEVELS = 14;
+const int TOP_LEVEL = 3;
+const int BALL_DIST = 48;
+const int RADIUS_BOARD = 8;
+const int RADIUS_GAME = 11;
 const float GRAVITY = 700.0f;
+
+const int FPS = 60;
 const float FRAME_TIME = 1.0f / FPS;
 
 // y level of payout boxes
@@ -62,6 +68,7 @@ void StartTimer(Timer *timer, double lifetime)
 
 bool TimerDone(Timer timer) {return GetTime() - timer.startTime >= timer.lifeTime;}
 
+// returns the angle between 2 cartesian coords
 float getAngle(Vector2 v1, Vector2 v2)
 {
 	float angle = (atan2f((v1.y - v2.y), (v1.x - v2.x)) * RAD2DEG);
@@ -75,6 +82,7 @@ float getAngle(Vector2 v1, Vector2 v2)
 // returns a cartesian coord thats in-between the 3 balls on the first level
 Vector2 getRandomBallPosition() {return (Vector2){GetRandomValue(((SCREEN_SIZE / 2.0f) - BALL_DIST) + RADIUS_GAME,  ((SCREEN_SIZE / 2.0f) + BALL_DIST) - RADIUS_GAME), 50};}
 
+// realloc mem for dynamic lists
 void resizeBoxes(Boxes* boxes)
 {
     boxes->cap *= 2;
@@ -87,6 +95,7 @@ void resizeBalls(Balls* balls)
     balls->ball = realloc(balls->ball, balls->cap);
 }
 
+// adds element to dynamic lists
 void addBox(Boxes* boxes, PayoutBox new_box)
 {
     if(boxes->size * sizeof(PayoutBox) == boxes->cap) resizeBoxes(boxes);
@@ -99,6 +108,7 @@ void addBall(Balls* balls, Ball new_ball)
     balls->ball[balls->size++] = new_ball;
 }
 
+// drawing game elements
 void drawBalls(Balls* balls, const int RADIUS) 
 {
     for(int i = 0; i < balls->size; i++) if(balls->ball[i].active) DrawCircleV(balls->ball[i].pos, RADIUS, balls->ball[i].c);
@@ -117,7 +127,7 @@ void drawPayoutBoxes(Boxes* boxes)
     }
 }
 
-// uses VECTOR REFLECTION FORMULA, v' = v -2(v * n)n, to handle collision between a ball at some point
+// uses vector reflection formula, v' = v -2(v * n)n, to handle collision between a ball at some point
 void collide(Ball* ball, Vector2 collision_pos, float radius)
 {
     // collision angle
@@ -141,6 +151,13 @@ void collide(Ball* ball, Vector2 collision_pos, float radius)
     ball->pos.y = collision_pos.y + (radius * n.y);
 }
 
+// determining if player can make that bet
+bool broke(float balance, float bet) {return (balance - bet < 0);}
+
+// paying out player based on the multiplier the ball hits
+void payout(float* balance, float bet, float multiplier) {*balance += (bet * multiplier);}
+
+// game ball collision handling
 void handleBallCollision(Ball* ball, Balls* board_balls)
 {
     for(int i = 0; i < board_balls->size; i++) 
@@ -148,16 +165,6 @@ void handleBallCollision(Ball* ball, Balls* board_balls)
         Ball* board_ball = &board_balls->ball[i];
         if(CheckCollisionCircles(ball->pos, RADIUS_GAME, board_ball->pos, RADIUS_BOARD)) collide(ball, board_ball->pos, (RADIUS_BOARD + RADIUS_GAME));
     }
-}
-
-bool broke(float balance, float bet) {return (balance - bet < 0);}
-
-void payout(float* balance, float bet, float multiplier) {*balance += (bet * multiplier);}
-
-void placeBet(Balls* balls, Timer* timer, float* balance, float bet)
-{
-    *balance -= bet;
-    addBall(balls, (Ball){RED, getRandomBallPosition(), bet, true, 0, 0});
 }
 
 void handlePayoutBoxCollision(Boxes* boxes, Ball* ball, float* balance)
@@ -175,6 +182,41 @@ void handlePayoutBoxCollision(Boxes* boxes, Ball* ball, float* balance)
     }
 }
 
+// where player can choose how much each ball is worth
+void editBet(float* bet, float balance)
+{
+    char bet_amount[CHAR_LIMIT];
+    
+    sprintf(bet_amount, "$%.2f", *bet);
+    DrawText("BALL AMOUNT", 0, 30, 19, LIME);
+    GuiSliderBar((Rectangle){MeasureText("BALL AMOUNT", 19) + 5, 33, 100, 12}, "", bet_amount, bet, 0.0f, balance);
+}
+
+// holding down 'PLAY' btn places bet
+void placeBet(Balls* balls, Timer* timer, float* balance, float bet)
+{
+    Rectangle border = (Rectangle){(SCREEN_SIZE / 2.0f) - 50, Y_POS + 100, 100, 30};
+
+    DrawRectangleRec(border, RED);
+    DrawText("PLAY", border.x + (border.width / 2.0f) - (MeasureText("PLAY", 20) / 2.0f), border.y + (border.height / 2.0f) - 10, 20, YELLOW);
+    
+    if((IsMouseButtonDown(MOUSE_LEFT_BUTTON)) && (CheckCollisionPointRec(GetMousePosition(), border)) && (TimerDone(*timer)) && (!broke(*balance, bet)))
+    {
+        *balance -= bet;
+        StartTimer(timer, ADD_TIME);
+        addBall(balls, (Ball){RED, getRandomBallPosition(), bet, true, 0, 0});
+    }
+}
+
+// shows how much money the player has in account
+void displayBalance(float balance)
+{
+    char text[CHAR_LIMIT];
+    sprintf(text, "BALANCE: $%.2f", balance);
+    DrawText(text, 0, 15, 19, LIME);
+}
+
+// updates the position of every active game ball
 void moveBalls(Balls* balls, Balls* board_balls, Boxes* boxes, float* balance)
 {
     for(int i = 0; i < balls->size; i++)
@@ -199,10 +241,11 @@ void moveBalls(Balls* balls, Balls* board_balls, Boxes* boxes, float* balance)
     }
 }
 
+// initialization of game objects
 void setPayoutBoxes(Boxes* boxes, Vector2 last_row, int box_count)
 {
     // rare edge multipliers
-    float multiplier = box_count;
+    float multiplier = LEVELS;
     
     // payout box dimensions
     int width = BALL_DIST - (RADIUS_BOARD * 2.0f);
@@ -234,13 +277,7 @@ void setBoard(Balls* board_balls, Boxes* boxes)
     }
 }
 
-void displayBalance(float balance)
-{
-    char text[CHAR_LIMIT];
-    sprintf(text, "BALANCE: $%.2f", balance);
-    DrawText(text, 0, 15, 19, LIME);
-}
-
+// instantiantion and termination of program
 void init(Balls* board_balls, Boxes* boxes)
 {
     SetTargetFPS(FPS);
@@ -271,18 +308,13 @@ int main()
     init(&board_balls, &boxes);
     while(!WindowShouldClose())
     {
-        if((IsMouseButtonDown(MOUSE_LEFT_BUTTON)) && (TimerDone(add_timer)) && (!broke(balance, bet)))
-        {
-            StartTimer(&add_timer, ADD_TIME);
-            placeBet(&game_balls, &add_timer, &balance, bet);
-        }
         moveBalls(&game_balls, &board_balls, &boxes, &balance);
         BeginDrawing();
             ClearBackground(BLACK);
-            
-            DrawFPS(0, 0);
             displayBalance(balance);
-
+            DrawFPS(0, 0);
+            editBet(&bet, balance);
+            placeBet(&game_balls, &add_timer, &balance, bet);
             drawBalls(&game_balls, RADIUS_GAME);
             drawBalls(&board_balls, RADIUS_BOARD);
             drawPayoutBoxes(&boxes);
