@@ -109,21 +109,22 @@ void addBall(Balls* balls, Ball new_ball)
 }
 
 // drawing game elements
-void drawBalls(Balls* balls, const int RADIUS) 
-{
-    for(int i = 0; i < balls->size; i++) if(balls->ball[i].active) DrawCircleV(balls->ball[i].pos, RADIUS, balls->ball[i].c);
-}
+void drawBalls(Balls* balls, const int RADIUS) {for(int i = 0; i < balls->size; i++) if(balls->ball[i].active) DrawCircleV(balls->ball[i].pos, RADIUS, balls->ball[i].c);}
 
 void drawPayoutBoxes(Boxes* boxes)
 {
-    char multiplier_text[CHAR_LIMIT];
+    char text[CHAR_LIMIT];
 
     for(int i = 0; i < boxes->size; i++)
     {
         PayoutBox* box = &boxes->box[i];
-        DrawRectangleRec(box->border, RAYWHITE);
-        sprintf(multiplier_text, "%.2f", box->multp);
-        DrawText(multiplier_text, box->border.x + 3, (box->border.y + (box->border.height / 2.0f)), 15, BLACK);
+        sprintf(text, "x%.2f", box->multp);
+        Color c;
+        if(i < 2) c = RED;
+        else if(i < 5) c = YELLOW;
+        else c = RAYWHITE;
+        DrawRectangleRec(box->border, c);
+        DrawText(text, box->border.x + 3, (box->border.y + (box->border.height / 2.0f)), 11, BLACK);
     }
 }
 

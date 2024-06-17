@@ -2,6 +2,7 @@
 #include <raymath.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 #define LIMIT 1024
 
@@ -25,7 +26,7 @@ const int OBJ_SIZE = 16;
 const int OBJ_COUNT = 30;
 const float OBJ_SPEED = 3.00;
 
-enum Gamestate
+typedef enum 
 {
    // objects are currently moving
    ACTIVE = 0,
@@ -35,15 +36,15 @@ enum Gamestate
    READY = 2,
    // quiting the  game
    QUIT = 3,
-};
+} Gamestate;
 
-enum Type
+typedef enum
 {
    UNDF = -1,
    ROCK = 0,
    PAPER = 1,
    SCISSORS = 2,
-};
+} Type;
 
 // represents one module in the game
 typedef struct
@@ -51,13 +52,12 @@ typedef struct
    bool move;
    Vector2 pos;
    float dx, dy;
-   enum Type type;
-   Texture2D texture;
+   Type type;
 } Object;
 
 typedef struct
 {
-   enum Type bet;
+   Type bet;
    float balance;
    float bet_amount;
 } Player;
@@ -81,8 +81,6 @@ bool TimerDone(Timer timer)
 
 void drawObjects(Object objects[OBJ_COUNT])
 {
-   DrawRectangleLinesEx(GA, 2, RAYWHITE);
-
    for(int i = 0; i < OBJ_COUNT; i++)
    {
        Color c;
@@ -99,51 +97,28 @@ void drawObjects(Object objects[OBJ_COUNT])
    }
 }
 
-void handleBorderCollision(Object* obj)
-{
-   // top & bottom of screen
-   if((obj->pos.y < 0) || ((obj->pos.y + OBJ_SIZE) > GA.height))
-       obj->dy *= -1;
-  
-   // left & right side of screen
-   if((obj->pos.x < 0) || ((obj->pos.x + OBJ_SIZE) > GA.width))
-       obj->dx *= -1;
-}
-
 void collisionWinner(Object* i, Object* j)
 {
    switch (i->type)
    {
-       // loses against paper and wins vs scissors
        case ROCK:
-           if(j->type == PAPER)
-               i->type = PAPER;
-           else if(j->type == SCISSORS)
-               j->type = ROCK;
+           if(j->type == PAPER) i->type = PAPER;
+           else if(j->type == SCISSORS) j->type = ROCK;
            break;
-      
-       // loses against scissors and wins against rock
        case PAPER:
-           if(j->type == SCISSORS)
-               i->type = SCISSORS;
-           else if(j->type == ROCK)
-               j->type = PAPER;
+           if(j->type == SCISSORS) i->type = SCISSORS;
+           else if(j->type == ROCK) j->type = PAPER;
            break;
-      
-       // loses against and wins vs. paper
        case SCISSORS:
-           if(j->type == ROCK)
-               i->type = ROCK;
-           else if(j->type == PAPER)
-               j->type = SCISSORS;
+           if(j->type == ROCK) i->type = ROCK;
+           else if(j->type == PAPER) j->type = SCISSORS;
            break;
-
        default:
            break;
    }
 }
 
-void handleObjectCollision(Object* i, Object* j)
+void collide(Object* i, Object* j)
 {
    // Velocities before collision
    Vector2 vi = {i->dx, i->dy};
@@ -173,6 +148,30 @@ void handleObjectCollision(Object* i, Object* j)
    collisionWinner(i, j);
 }
 
+void handleObjectCollision(Object* i, Object objects[OBJ_COUNT], Rectangle area)
+{
+    for(int j = 0; j < OBJ_COUNT; j++)
+    {
+        // only collide with objects of different type
+        if(i->type == objects[j].type) continue;
+
+        Rectangle potential_col_area = {objects[j].pos.x, objects[j].pos.y, OBJ_SIZE, OBJ_SIZE};
+
+        if(CheckCollisionRecs(area, potential_col_area)) collide(i, &objects[j]);
+    }
+}
+
+void handleBorderCollision(Object* obj)
+{
+   // top & bottom of screen
+   if((obj->pos.y < 0) || ((obj->pos.y + OBJ_SIZE) > GA.height))
+       obj->dy *= -1;
+  
+   // left & right side of screen
+   if((obj->pos.x < 0) || ((obj->pos.x + OBJ_SIZE) > GA.width))
+       obj->dx *= -1;
+}
+
 void updateObjects(Object objects[OBJ_COUNT])
 {
    for(int i = 0; i < OBJ_COUNT; i++)
@@ -187,46 +186,31 @@ void updateObjects(Object objects[OBJ_COUNT])
        Rectangle obj_area = {objects[i].pos.x, objects[i].pos.y, OBJ_SIZE, OBJ_SIZE};
 
        // handling collisions with other objects
-       for(int j = 0; j < OBJ_COUNT; j++)
-       {
-           // only collide with objects of different type
-           if(objects[i].type == objects[j].type)
-               continue;
-
-           Rectangle potential_col = {objects[j].pos.x, objects[j].pos.y, OBJ_SIZE, OBJ_SIZE};
-
-           if(CheckCollisionRecs(obj_area, potential_col))
-               handleObjectCollision(&objects[i], &objects[j]);
-       }
+       handleObjectCollision(&objects[i], objects, obj_area);
    }
 }
 
-void setObjects(Object objects[OBJ_COUNT], enum Gamestate* gs)
+void setObjects(Object objects[OBJ_COUNT])
 {
-   *gs = READY;
-
    for(int i = 0; i < OBJ_COUNT; i++)
-   {
-       enum Type t = UNDF;
+    {
+        Type t = UNDF;
 
-       // 10 objects of each type
-       if(i < 10)
-           t = ROCK;
-       else if(i < 20)
-           t = PAPER;
-       else
-           t = SCISSORS;
+        // 10 rock, paper, and scissor objects
+        if(i < 10) t = ROCK;
+        else if(i < 20) t = PAPER;
+        else t = SCISSORS;
 
-       objects[i].type = t;
+        objects[i].type = t;
 
-       // randomize direction and position
-       objects[i].dx = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
-       objects[i].dy = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
-       objects[i].pos = (Vector2){GetRandomValue(0, (GA.width - OBJ_SIZE)), GetRandomValue(0, (GA.height - OBJ_SIZE))};
+        // randomize direction and position
+        objects[i].dx = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
+        objects[i].dy = (GetRandomValue(0, 1) == 1) ? OBJ_SPEED : -OBJ_SPEED;
+        objects[i].pos = (Vector2){GetRandomValue(0, (GA.width - OBJ_SIZE)), GetRandomValue(0, (GA.height - OBJ_SIZE))};
    }
 }
 
-enum Type checkWinner(Object objects[OBJ_COUNT])
+Type checkWinner(Object objects[OBJ_COUNT])
 {
    int rcnt = 0;
    int pcnt = 0;
@@ -238,21 +222,15 @@ enum Type checkWinner(Object objects[OBJ_COUNT])
        {
            case ROCK:
                rcnt++;
-               if(rcnt == OBJ_COUNT)
-                   return ROCK;
+               if(rcnt == OBJ_COUNT) return ROCK;
            break;
-          
            case PAPER: pcnt++;
-               if(pcnt == OBJ_COUNT)
-                   return PAPER;
+               if(pcnt == OBJ_COUNT) return PAPER;
            break;
-          
            case SCISSORS:
                scnt++;
-               if(scnt == OBJ_COUNT)
-                   return SCISSORS;
+               if(scnt == OBJ_COUNT) return SCISSORS;
            break;
-          
            default:  
                break;
        }
@@ -261,35 +239,17 @@ enum Type checkWinner(Object objects[OBJ_COUNT])
    return UNDF;
 }
 
-bool broke(float balance)
-{
-   return (balance == 0);
-}
+bool broke(float balance) { return (balance == 0); }
 
-void betInfo(Player* player, char btnd[LIMIT], char cbd[LIMIT])
+void placeBet(Player* player)
 {
    char balance_dialouge[LIMIT];
    char bet_amount_dialouge[LIMIT];
-   strcpy(btnd, "START");
 
-   // choosing bet
-   if(GuiButton((Rectangle){0, GA.height + 5, 20, 20}, "R"))
-   {
-       player->bet = ROCK;
-       sprintf(cbd, "%sROCK", CURR_BET);
-   }
-
-   if(GuiButton((Rectangle){30, GA.height + 5, 20, 20}, "P"))
-   {
-       player->bet = PAPER;
-       sprintf(cbd, "%sPAPER", CURR_BET);
-   }
-
-   if(GuiButton((Rectangle){60, GA.height + 5, 20, 20}, "S"))
-   {
-       player->bet = SCISSORS;
-       sprintf(cbd, "%sSCISSORS", CURR_BET);
-   }
+   // choosing which object type will win
+   if(GuiButton((Rectangle){0, GA.height + 5, 20, 20}, "R")) player->bet = ROCK;
+   if(GuiButton((Rectangle){30, GA.height + 5, 20, 20}, "P")) player->bet = PAPER;
+   if(GuiButton((Rectangle){60, GA.height + 5, 20, 20}, "S")) player->bet = SCISSORS;
   
    // displaying current betting information
    sprintf(balance_dialouge, "BALANCE: %.2f", player->balance);
@@ -298,121 +258,119 @@ void betInfo(Player* player, char btnd[LIMIT], char cbd[LIMIT])
    DrawText(bet_amount_dialouge, 0, GA.height + 50, 10, RAYWHITE);
 
    // choosing bet amount
-   if(!broke(player->balance))
-       GuiSliderBar((Rectangle){0, GA.height + 65, 100, 20}, "", "", &player->bet_amount, 0.10, player->balance);
+   if(!broke(player->balance)) GuiSliderBar((Rectangle){0, GA.height + 65, 100, 20}, "", "", &player->bet_amount, 0.10, player->balance);
 }
 
-void gameResult(Player* player, enum Gamestate* gs, char btnd[LIMIT], char rd[LIMIT], bool win)
+void gameResult(Player* player, Gamestate* gs, bool win)
 {
-   // game payout and dialouge
-   if(win)
-   {
-       player->balance += (player->bet_amount * 2);
-       strcpy(rd, WIN);
-   }
-  
-   else
-   {
-       player->balance -= player->bet_amount;
-       strcpy(rd, LOSE);
-   }
-  
-   // updating game and player information
-   *gs = DONE;
-   player->bet = UNDF;
-   player->bet_amount = (player->balance * 0.20f);
-   strcpy(btnd, "RESET");
+    // payout
+    if(win) player->balance += (player->bet_amount * 3);
+    else player->balance -= player->bet_amount;
+    
+    // restart betting information
+    player->bet = UNDF;
+    player->bet_amount = (player->balance * 0.20f);
 }
 
-void init(Object objects[OBJ_COUNT], Player* player, enum Gamestate* gs)
+void displayResult(bool win)
 {
-   player->bet = UNDF;
-   player->balance = 100.00;
-   player->bet_amount = 20.00;
-  
-   SetTargetFPS(FPS);
-   setObjects(objects, gs);
-   SetTraceLogLevel(LOG_ERROR);
-   InitWindow(SCRA.width, SCRA.height, "Rock, Paper, Scissors Sim");
+    char text[LIMIT];
+    
+    if(win) sprintf(text, "%s", WIN);
+    else sprintf(text, "%s", LOSE);
+
+    DrawText(text, (SCRA.width / 2.0f) - (MeasureText(text, 30) / 2.0), (SCRA.height / 2.0f), 30, RAYWHITE);
+}
+
+void displayCurrentBet(Type bet)
+{
+    char text[LIMIT];
+    char bet_text[LIMIT];
+
+    switch (bet)
+    {
+        case ROCK: strcpy(bet_text, "ROCK"); break;
+        case PAPER: strcpy(bet_text, "PAPER"); break;
+        case SCISSORS: strcpy(bet_text, "SCISSORS"); break;
+        default:    
+            break;
+    }
+
+    sprintf(text, "%s%s", CURR_BET, bet_text);
+    DrawText(text, (SCRA.width / 2.0f) - (MeasureText(text, 30) / 2.0f), GA.height + 40, 30, RAYWHITE);
+}
+
+void init(Object objects[OBJ_COUNT], Player* player, Gamestate* gs)
+{
+    // player betting information
+    player->bet = UNDF;
+    player->balance = 100.00;
+    player->bet_amount = 20.00;
+
+    *gs = READY;
+
+    SetTargetFPS(FPS);
+    setObjects(objects);
+    SetTraceLogLevel(LOG_ERROR);
+    InitWindow(SCRA.width, SCRA.height, "Rock, Paper, Scissors Sim");
 }
 
 int main()
 {
-   // button dialouge
-   char btnd[LIMIT] = "START";
-   // current bet dialouge
-   char cbd[LIMIT];
-   // result dialouge
-   char rd[LIMIT];
    Player player;
    Object objects[OBJ_COUNT];
    Timer text_timer;
-   enum Gamestate gs = READY;
+   Gamestate game_state = READY;
 
-   init(objects, &player, &gs);
+   init(objects, &player, &game_state);
 
-   while((gs != QUIT) && !WindowShouldClose())
+   while((game_state != QUIT) && !WindowShouldClose())
    {
        // the winning object type
-       enum Type wobjt = checkWinner(objects);
-       if(broke(player.balance))
-           strcpy(btnd, "QUIT");
+       Type wobjt = checkWinner(objects);
 
        BeginDrawing();
            ClearBackground(BLACK);
+           DrawRectangleLinesEx(GA, 2, RAYWHITE);
            drawObjects(objects);
-          
-           switch (gs)
+           switch (game_state)
            {
                case ACTIVE:
-                   // moves objects on screen
                    updateObjects(objects);
-                   // show current bet placed
-                   DrawText(cbd, (SCRA.width / 2.0f) - (MeasureText(cbd, 30) / 2.0f), GA.height + 40, 30, RAYWHITE);
-                   // update player's balance when game ends
+                   displayCurrentBet(player.bet);
                    if(wobjt != UNDF) 
-                       gameResult(&player, &gs, btnd, rd, (wobjt == player.bet));
+                   {
+                        game_state = DONE;
+                        gameResult(&player, &game_state, (wobjt == player.bet));
+                   }
                    break;
-
                case DONE:
-                   // display result of the game or inform of invalid balance
-                   if(!broke(player.balance))
-                       DrawText(rd, (SCRA.width / 2.0f) - (MeasureText(rd, 30) / 2.0), (SCRA.height / 2.0f), 30, RAYWHITE);
-                   else
-                       DrawText(NO_MONEY, (SCRA.width / 2.0f) - (MeasureText(NO_MONEY, 30) / 2.0f), (SCRA.height / 2.0f), 30, RAYWHITE);
-                   // either reset the board or quit bc of no money
-                   if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 100, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 200, 30}, btnd))
+                   if(!broke(player.balance)) displayResult(wobjt == player.bet);
+                   else DrawText(NO_MONEY, (SCRA.width / 2.0f) - (MeasureText(NO_MONEY, 30) / 2.0f), (SCRA.height / 2.0f), 30, RAYWHITE);
+                   if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 100, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 200, 30}, broke(player.balance) ? "QUIT" : "RESET"))
                    {
-                       if(strcmp(btnd, "RESET") == 0)
-                           setObjects(objects, &gs);
-                       else if(strcmp(btnd, "QUIT") == 0)
-                           gs = QUIT;
+                       if(!broke(player.balance))
+                       {
+                            game_state = READY;
+                            setObjects(objects);
+                       }
+                       else game_state = QUIT;
                    }
                    break;
-
                case READY:
-                   //  player chooses object type to win with some amount of money
-                   betInfo(&player, btnd, cbd);
-                   // btn that starts the game when valid bet placed
-                   if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 100, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 200, 30}, btnd))
+                   placeBet(&player);
+                   if(GuiButton((Rectangle){(SCRA.width / 2.0f) - 100, GA.height + ((SCRA.height - GA.height) / 2.0f) - 25, 200, 30}, "START"))
                    {
-                       if(player.bet != UNDF)
-                           gs = ACTIVE;
-                       else
-                           StartTimer(&text_timer, TEXT_TIME);
+                       if(player.bet != UNDF) game_state = ACTIVE;
+                       else StartTimer(&text_timer, TEXT_TIME);
                    }
-                   // reminds player to place a bet if they tried starting the game without placing one
-                   if(!TimerDone(text_timer))
-                       DrawText(NO_BET, (SCRA.width / 2.0f) - (MeasureText(NO_BET, 30) / 2.0f), (GA.height / 2.0f), 30, RAYWHITE);
+                   if(!TimerDone(text_timer)) DrawText(NO_BET, (SCRA.width / 2.0f) - (MeasureText(NO_BET, 30) / 2.0f), (GA.height / 2.0f), 30, RAYWHITE);
                    break;
-
                default:
                    break;
            }
-      
        EndDrawing();
    }
-
    CloseWindow();
    return 0;
 }
