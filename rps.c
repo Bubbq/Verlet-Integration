@@ -318,8 +318,8 @@ void init(Object objects[OBJ_COUNT], Player* player, Gamestate* gs)
 int main()
 {
    Player player;
-   Object objects[OBJ_COUNT];
    Timer text_timer;
+   Object objects[OBJ_COUNT];
    Gamestate game_state = READY;
 
    init(objects, &player, &game_state);

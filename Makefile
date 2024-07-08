@@ -1,5 +1,5 @@
 all:
-	gcc rps.c -o run -lraylib -lm -Wall
+	gcc verlet.c -o run -lraylib -lm -Wall
 clean:
 	rm run
 	clear
