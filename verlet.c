@@ -1,8 +1,11 @@
 #include "headers/raylib.h"
 #include "headers/raymath.h"
+
+#define RAYGUI_IMPLEMENTATION
+#include "headers/raygui.h"
+
 #include <stdlib.h>
 #include <stdio.h>
-
 typedef struct
 {
     Vector2 curr_pos;
@@ -27,13 +30,13 @@ typedef struct
 
 const int FPS = 60;
 const int STEPS = 8;
-const int SCRH = 1024;
-const int SCRW = 1000;
-const float ADD_TIME = 0.1f;
+const int SCRH = 900;
+const int SCRW = 900;
+float ADD_TIME = 0.1f;
 const float GRAVITY = 1000.0f;
 
-const float RADIUS = 300.0f;
-const Vector2 CENTER = { SCRW / 2.0f, SCRH / 3.0f };
+float RADIUS = 300.0f;
+const Vector2 CENTER = { SCRW / 2.0f, SCRH / 2.0f };
 
 void start_timer(Timer *timer, double lifetime)
 {
@@ -114,8 +117,7 @@ void add_balls(Timer* timer, Circles* circles)
 
 void delete_verlet_circle(Circles* circles, int pos)
 {
-    for(int i = pos; i < circles->size; circles->circle[i] = circles->circle[i + 1],i++)
-        ;
+    for(int i = pos; i < circles->size; i++) circles->circle[i] = circles->circle[i + 1];
     circles->size--;
 }
 
@@ -130,12 +132,18 @@ void remove_balls(Circles* circles)
     }
 }
 
-void display_stats(int ball_count)
+void display_stats(int ball_count, float* radius, float* add_speed)
 {
-    char ball_count_text[1024];
-    sprintf(ball_count_text, "ball count: %d", ball_count);
-    DrawText(ball_count_text, 0, 0, 20, LIME);
-    DrawFPS(0, 19);
+    char text[1024];
+
+	sprintf(text, "%d", (int)(1 / *add_speed));
+	GuiSliderBar((Rectangle){120, 5, 80, 10}, "BALLS PER SECOND", text, add_speed, .05f, 0.1f);
+
+	sprintf(text, "%.0fpx", (*radius));
+	GuiSliderBar((Rectangle){55, 23, 80, 10}, "RADIUS", text, radius, 100, 400);
+    
+	sprintf(text, "BALL COUNT: %d", ball_count);
+    DrawText(text, 12, 43, 10, GRAY);
 }
 
 void draw_circles(Circles* circles)
@@ -189,7 +197,7 @@ void handle_circle_collision(Circles* all_cicles, VerletCirlce* vc)
 
 void apply_gravity(Vector2* acceleration)
 {
-    float delta = (20 * GRAVITY * GetFrameTime());
+    float delta = (20 * 1.75 * GRAVITY * GetFrameTime());
     acceleration->y += (acceleration->y > GRAVITY) ? -delta : delta;
     acceleration->x += (acceleration->x > 0) ? -delta : delta;
 }
@@ -236,7 +244,7 @@ int main()
         BeginDrawing();
             ClearBackground(BLACK);
             draw_circles(&circles);
-            display_stats(circles.size);
+            display_stats(circles.size, &RADIUS, &ADD_TIME);
             DrawCircleLinesV(CENTER, RADIUS, RAYWHITE);
         EndDrawing();
     }
