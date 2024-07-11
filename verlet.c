@@ -1,5 +1,5 @@
 #include "headers/raylib.h"
-#include <raymath.h>
+#include "headers/raymath.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -27,13 +27,13 @@ typedef struct
 
 const int FPS = 60;
 const int STEPS = 8;
-const int SCRH = 700;
-const int SCRW = 700;
+const int SCRH = 1024;
+const int SCRW = 1000;
 const float ADD_TIME = 0.1f;
 const float GRAVITY = 1000.0f;
 
 const float RADIUS = 300.0f;
-const Vector2 CENTER = { SCRW / 2.0f, SCRH / 2.0f };
+const Vector2 CENTER = { SCRW / 2.0f, SCRH / 3.0f };
 
 void start_timer(Timer *timer, double lifetime)
 {
@@ -101,11 +101,41 @@ void add_verlet_circle(Circles* circles, VerletCirlce vc)
     circles->circle[circles->size++] = vc;
 }
 
-void show_ball_count(int ball_count)
+void add_balls(Timer* timer, Circles* circles)
+{
+    int radius = GetRandomValue(5, 10);
+    if(IsMouseButtonDown(MOUSE_LEFT_BUTTON) && timer_done(*timer) && (CheckCollisionPointCircle(GetMousePosition(), CENTER, RADIUS)) && (Vector2Distance(GetMousePosition(), CENTER) < (RADIUS - radius)))
+    {
+        start_timer(timer, ADD_TIME);
+        Vector2 direction = Vector2Normalize(Vector2Subtract(GetMousePosition(), CENTER));
+        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 20)), radius, get_random_color()});
+    }
+}
+
+void delete_verlet_circle(Circles* circles, int pos)
+{
+    for(int i = pos; i < circles->size; circles->circle[i] = circles->circle[i + 1],i++)
+        ;
+    circles->size--;
+}
+
+void remove_balls(Circles* circles)
+{
+    for(int i = 0; i < circles->size; i++)
+    {
+        if(CheckCollisionCircles(GetMousePosition(), 5, circles->circle[i].curr_pos, circles->circle[i].radius))
+        {
+            delete_verlet_circle(circles, i);
+        }
+    }
+}
+
+void display_stats(int ball_count)
 {
     char ball_count_text[1024];
-    sprintf(ball_count_text, "%d BALLS", ball_count);
-    DrawText(ball_count_text, 0, 0, 19, LIME);
+    sprintf(ball_count_text, "ball count: %d", ball_count);
+    DrawText(ball_count_text, 0, 0, 20, LIME);
+    DrawFPS(0, 19);
 }
 
 void draw_circles(Circles* circles)
@@ -132,7 +162,7 @@ void handle_border_collision(Vector2* curr_pos, float radius)
     {
         float angle = get_angle(*curr_pos, CENTER);
         Vector2 normal_vector = {cosf(angle * DEG2RAD), sinf(angle * DEG2RAD)};
-        *curr_pos = Vector2Add(CENTER, Vector2Scale(normal_vector, (RADIUS - radius)));
+        *curr_pos = Vector2Add(CENTER, Vector2Scale(normal_vector,(RADIUS - radius)));
     }
 }
 
@@ -157,17 +187,22 @@ void handle_circle_collision(Circles* all_cicles, VerletCirlce* vc)
     }
 }
 
+void apply_gravity(Vector2* acceleration)
+{
+    float delta = (20 * GRAVITY * GetFrameTime());
+    acceleration->y += (acceleration->y > GRAVITY) ? -delta : delta;
+    acceleration->x += (acceleration->x > 0) ? -delta : delta;
+}
+
 void update_circles(Circles* c, float dt)
 {
-    for(int s = 0; s < STEPS; s++)
+    for(int i = 0; i < c->size; i++)
     {
-        for(int i = 0; i < c->size; i++)
-        {
-            VerletCirlce* vc = (c->circle + i);
-            update_position(vc, dt);
-            handle_circle_collision(c, vc);
-            handle_border_collision(&vc->curr_pos, vc->radius);
-        }
+        VerletCirlce* vc = (c->circle + i);
+        update_position(vc, dt);
+        apply_gravity(&vc->acceleration);
+        handle_circle_collision(c, vc);
+        handle_border_collision(&vc->curr_pos, vc->radius);
     }
 }
 
@@ -193,19 +228,15 @@ int main()
 
     while(!WindowShouldClose())
     {
-        dt = GetFrameTime() / STEPS;
-        update_circles(&circles, dt);   
-        
-        if(IsMouseButtonDown(MOUSE_LEFT_BUTTON) && timer_done(timer) && (CheckCollisionPointCircle(GetMousePosition(), CENTER, RADIUS)))
-        {
-            start_timer(&timer, ADD_TIME);
-            add_verlet_circle(&circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), (Vector2){0, GRAVITY}, GetRandomValue(5, 15), get_random_color()});
-        }
+        dt = (GetFrameTime() / STEPS);
+        for(int i = 0; i < STEPS; i++) update_circles(&circles, dt);   
+        add_balls(&timer, &circles);
+        if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
 
         BeginDrawing();
             ClearBackground(BLACK);
             draw_circles(&circles);
-            show_ball_count(circles.size);
+            display_stats(circles.size);
             DrawCircleLinesV(CENTER, RADIUS, RAYWHITE);
         EndDrawing();
     }
