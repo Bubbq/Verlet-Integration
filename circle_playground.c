@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+
 typedef struct
 {
     Vector2 curr_pos;
@@ -32,9 +33,10 @@ const int FPS = 60;
 const int STEPS = 8;
 const int SCRH = 900;
 const int SCRW = 900;
-float ADD_TIME = 0.1f;
 const float GRAVITY = 1000.0f;
+const float MIN_SPEED = 0.005f;
 
+float BALLS_PER_S = 10;
 float RADIUS = 300.0f;
 const Vector2 CENTER = { SCRW / 2.0f, SCRH / 2.0f };
 
@@ -59,7 +61,7 @@ float get_angle(Vector2 v1, Vector2 v2)
 
 Color get_random_color()
 {
-    int rand = GetRandomValue(0, 25);
+    int rand = GetRandomValue(0, 23);
     switch (rand)
     {
         case 0: return LIGHTGRAY;
@@ -84,10 +86,8 @@ Color get_random_color()
         case 19: return BROWN;
         case 20: return DARKBROWN;
         case 21: return WHITE;
-        case 22: return BLACK;
-        case 23: return BLANK;
-        case 24: return MAGENTA;
-        case 25: return RAYWHITE;
+        case 22: return MAGENTA;
+        case 23: return RAYWHITE;
         default: return WHITE;
     }
 }
@@ -106,10 +106,10 @@ void add_verlet_circle(Circles* circles, VerletCirlce vc)
 
 void add_balls(Timer* timer, Circles* circles)
 {
-    int radius = GetRandomValue(5, 10);
+    int radius = GetRandomValue(3, 15);
     if(IsMouseButtonDown(MOUSE_LEFT_BUTTON) && timer_done(*timer) && (CheckCollisionPointCircle(GetMousePosition(), CENTER, RADIUS)) && (Vector2Distance(GetMousePosition(), CENTER) < (RADIUS - radius)))
     {
-        start_timer(timer, ADD_TIME);
+        start_timer(timer, (1.0f / BALLS_PER_S));
         Vector2 direction = Vector2Normalize(Vector2Subtract(GetMousePosition(), CENTER));
         add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 20)), radius, get_random_color()});
     }
@@ -136,14 +136,14 @@ void display_stats(int ball_count, float* radius, float* add_speed)
 {
     char text[1024];
 
-	sprintf(text, "%d", (int)(1 / *add_speed));
-	GuiSliderBar((Rectangle){120, 5, 80, 10}, "BALLS PER SECOND", text, add_speed, .05f, 0.1f);
+	sprintf(text, "%.0f BALL%s PER SECOND", *add_speed, (*add_speed > 1) ? "S" : "");
+	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, add_speed, 1, 20);
 
 	sprintf(text, "%.0fpx", (*radius));
-	GuiSliderBar((Rectangle){55, 23, 80, 10}, "RADIUS", text, radius, 100, 400);
+	GuiSliderBar((Rectangle){MeasureText("RADIUS", 10) + 10, 23, 80, 10}, "RADIUS", text, radius, 100, 400);
     
 	sprintf(text, "BALL COUNT: %d", ball_count);
-    DrawText(text, 12, 43, 10, GRAY);
+    DrawText(text, 5, 43, 10, GRAY);
 }
 
 void draw_circles(Circles* circles)
@@ -153,15 +153,6 @@ void draw_circles(Circles* circles)
         VerletCirlce* vc = (circles->circle + i);
         DrawCircle(vc->curr_pos.x, vc->curr_pos.y, vc->radius, vc->color);
     }
-}
-
-void update_position(VerletCirlce* vc, float dt)
-{
-    Vector2 velocity = Vector2Subtract(vc->curr_pos, vc->old_pos);
-    vc->old_pos = vc->curr_pos;
-
-    // verlet integration formula -> v(n+1) = v(n) + v + adt^2
-    vc->curr_pos = Vector2Add(vc->curr_pos, Vector2Add(velocity, Vector2Scale(vc->acceleration, powf(dt, 2.0f))));
 }
 
 void handle_border_collision(Vector2* curr_pos, float radius)
@@ -197,9 +188,24 @@ void handle_circle_collision(Circles* all_cicles, VerletCirlce* vc)
 
 void apply_gravity(Vector2* acceleration)
 {
-    float delta = (20 * 1.75 * GRAVITY * GetFrameTime());
-    acceleration->y += (acceleration->y > GRAVITY) ? -delta : delta;
-    acceleration->x += (acceleration->x > 0) ? -delta : delta;
+    // acheive an acceleration of <0, GRAVITY>, like earth,  in 1/3 of a second
+    const float dt = GetFrameTime() * 3;
+    float dx = (0 - acceleration->x) * dt;
+    float dy = (GRAVITY - acceleration->y) * dt;
+
+    // degrading the balls acceleration 
+    if(roundf(acceleration->y) != GRAVITY) acceleration->y += dy;
+    if(roundf(acceleration->x) != 0) acceleration->x += dx;
+}
+
+void update_position(VerletCirlce* vc, float dt)
+{
+    Vector2 velocity = Vector2Subtract(vc->curr_pos, vc->old_pos);
+    velocity.x -= (velocity.x * dt);
+    vc->old_pos = vc->curr_pos;
+
+    // verlet integration formula -> v(n+1) = v(n) + v + adt^2
+    vc->curr_pos = Vector2Add(vc->curr_pos, Vector2Add(velocity, Vector2Scale(vc->acceleration, powf(dt, 2.0f))));
 }
 
 void update_circles(Circles* c, float dt)
@@ -242,10 +248,10 @@ int main()
         if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
 
         BeginDrawing();
-            ClearBackground(BLACK);
-            draw_circles(&circles);
-            display_stats(circles.size, &RADIUS, &ADD_TIME);
+            display_stats(circles.size, &RADIUS, &BALLS_PER_S);
             DrawCircleLinesV(CENTER, RADIUS, RAYWHITE);
+            draw_circles(&circles);
+            ClearBackground(BLACK);
         EndDrawing();
     }
 
