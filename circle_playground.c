@@ -31,14 +31,15 @@ typedef struct
 
 const int FPS = 60;
 const int STEPS = 8;
+
 const int SCRH = 900;
 const int SCRW = 900;
-const float GRAVITY = 1000.0f;
-const float MIN_SPEED = 0.005f;
+const Vector2 CENTER = { SCRW / 2.0f, SCRH / 2.0f };
 
+const float GRAVITY = 1000.0f;
+float grav_strength = GRAVITY;
 float BALLS_PER_S = 10;
 float RADIUS = 300.0f;
-const Vector2 CENTER = { SCRW / 2.0f, SCRH / 2.0f };
 
 void start_timer(Timer *timer, double lifetime)
 {
@@ -51,18 +52,9 @@ bool timer_done(Timer timer)
    return GetTime() - timer.startTime >= timer.lifeTime;
 }
 
-float get_angle(Vector2 v1, Vector2 v2)
-{
-	float angle = (atan2f((v1.y - v2.y), (v1.x - v2.x)) * RAD2DEG);
-	if(angle > 360) angle -= 360;
-	else if(angle < 0) angle += 360;
-	return angle;
-}
-
 Color get_random_color()
 {
-    int rand = GetRandomValue(0, 23);
-    switch (rand)
+    switch (GetRandomValue(0, 23))
     {
         case 0: return LIGHTGRAY;
         case 1: return GRAY;
@@ -104,14 +96,13 @@ void add_verlet_circle(Circles* circles, VerletCirlce vc)
     circles->circle[circles->size++] = vc;
 }
 
-void add_balls(Timer* timer, Circles* circles)
+void add_balls(Timer* timer, Circles* circles, float radius)
 {
-    int radius = GetRandomValue(3, 15);
     if(IsMouseButtonDown(MOUSE_LEFT_BUTTON) && timer_done(*timer) && (CheckCollisionPointCircle(GetMousePosition(), CENTER, RADIUS)) && (Vector2Distance(GetMousePosition(), CENTER) < (RADIUS - radius)))
     {
         start_timer(timer, (1.0f / BALLS_PER_S));
         Vector2 direction = Vector2Normalize(Vector2Subtract(GetMousePosition(), CENTER));
-        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 20)), radius, get_random_color()});
+        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 10)), radius, get_random_color()});
     }
 }
 
@@ -132,7 +123,7 @@ void remove_balls(Circles* circles)
     }
 }
 
-void display_stats(int ball_count, float* radius, float* add_speed)
+void display_stats(int ball_count, float* radius, float* add_speed, float* ball_radius, float* gs)
 {
     char text[1024];
 
@@ -140,10 +131,18 @@ void display_stats(int ball_count, float* radius, float* add_speed)
 	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, add_speed, 1, 20);
 
 	sprintf(text, "%.0fpx", (*radius));
-	GuiSliderBar((Rectangle){MeasureText("RADIUS", 10) + 10, 23, 80, 10}, "RADIUS", text, radius, 100, 400);
+	GuiSliderBar((Rectangle){MeasureText("BORDER RADIUS", 10) + 10, 23, 80, 10}, "BORDER RADIUS", text, radius, 100, 400);
     
+    sprintf(text, "%.0fpx", (*ball_radius)); 
+	GuiSliderBar((Rectangle){MeasureText("BALL RADIUS", 10) + 10, 41, 80, 10}, "BALL RADIUS", text, ball_radius, 1, 20);
+
+    sprintf(text, "%.0f", (*gs)); 
+	GuiSliderBar((Rectangle){MeasureText("GRAVITY STRENGTH", 10) + 10, 59, 80, 10}, "GRAVITY STRENGTH", "", gs, 0, (GRAVITY * 5));
+
 	sprintf(text, "BALL COUNT: %d", ball_count);
-    DrawText(text, 5, 43, 10, GRAY);
+    DrawText(text, 5, 79, 10, GRAY);
+
+    DrawFPS(SCRW - 75, 0);
 }
 
 void draw_circles(Circles* circles)
@@ -159,9 +158,8 @@ void handle_border_collision(Vector2* curr_pos, float radius)
 {
     if((Vector2Distance(*curr_pos, CENTER) + radius) >= RADIUS)
     {
-        float angle = get_angle(*curr_pos, CENTER);
-        Vector2 normal_vector = {cosf(angle * DEG2RAD), sinf(angle * DEG2RAD)};
-        *curr_pos = Vector2Add(CENTER, Vector2Scale(normal_vector,(RADIUS - radius)));
+        Vector2 n = Vector2Normalize(Vector2Subtract(*curr_pos, CENTER));
+        *curr_pos = Vector2Add(CENTER, Vector2Scale(n,(RADIUS - radius)));
     }
 }
 
@@ -176,9 +174,8 @@ void handle_circle_collision(Circles* all_cicles, VerletCirlce* vc)
             float distance = Vector2Distance(vc->curr_pos, all_cicles->circle[i].curr_pos);
             // how much the 2 circles need to move by 
             float delta = (vc->radius + all_cicles->circle[i].radius) - distance;
-            float angle = get_angle(vc->curr_pos, all_cicles->circle[i].curr_pos);
-            // the normal vector relative to the center of the other, collided circle
-            Vector2 n = { cosf(angle * DEG2RAD), sinf(angle * DEG2RAD) };
+            // the axis of collision
+            Vector2 n = Vector2Normalize(Vector2Subtract(vc->curr_pos, all_cicles->circle[i].curr_pos));
             // move circles in opposite directions so that now they have appropriate distance 
             vc->curr_pos = Vector2Add(vc->curr_pos, Vector2Scale(n, (delta * 0.5f)));
             all_cicles->circle[i].curr_pos = Vector2Subtract(all_cicles->circle[i].curr_pos, Vector2Scale(n, (delta * 0.5f)));
@@ -188,20 +185,18 @@ void handle_circle_collision(Circles* all_cicles, VerletCirlce* vc)
 
 void apply_gravity(Vector2* acceleration)
 {
-    // acheive an acceleration of <0, GRAVITY>, like earth,  in 1/3 of a second
-    const float dt = GetFrameTime() * 3;
-    float dx = (0 - acceleration->x) * dt;
-    float dy = (GRAVITY - acceleration->y) * dt;
+    // acheive an acceleration of <0, grav_strength>, like earth, in a second
+    const float dt = GetFrameTime();
+    Vector2 delta = { ((0 - acceleration->x) * dt), ((grav_strength - acceleration->y) * dt) };
 
-    // degrading the balls acceleration 
-    if(roundf(acceleration->y) != GRAVITY) acceleration->y += dy;
-    if(roundf(acceleration->x) != 0) acceleration->x += dx;
+    // decceleration
+    *acceleration = Vector2Add(*acceleration, delta);
 }
 
 void update_position(VerletCirlce* vc, float dt)
 {
     Vector2 velocity = Vector2Subtract(vc->curr_pos, vc->old_pos);
-    velocity.x -= (velocity.x * dt);
+    velocity = Vector2Subtract(velocity, Vector2Scale(velocity, dt));
     vc->old_pos = vc->curr_pos;
 
     // verlet integration formula -> v(n+1) = v(n) + v + adt^2
@@ -224,7 +219,7 @@ void init()
 {
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
-    InitWindow(SCRW, SCRH, "Verlet Circles");
+    InitWindow(SCRW, SCRH, "Verlet Circle Playground");
 }
 
 void deinit(VerletCirlce* alloc_mem)
@@ -236,25 +231,23 @@ void deinit(VerletCirlce* alloc_mem)
 int main()
 {
     float dt;
+    float br = 5;
     Timer timer;
     Circles circles = {0, sizeof(VerletCirlce), malloc(sizeof(VerletCirlce))};
     init();
-
     while(!WindowShouldClose())
     {
         dt = (GetFrameTime() / STEPS);
         for(int i = 0; i < STEPS; i++) update_circles(&circles, dt);   
-        add_balls(&timer, &circles);
+        add_balls(&timer, &circles, br);
         if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
-
         BeginDrawing();
-            display_stats(circles.size, &RADIUS, &BALLS_PER_S);
+            display_stats(circles.size, &RADIUS, &BALLS_PER_S, &br, &grav_strength);
             DrawCircleLinesV(CENTER, RADIUS, RAYWHITE);
             draw_circles(&circles);
             ClearBackground(BLACK);
         EndDrawing();
     }
-
     deinit(circles.circle);
     return 0;    
 }
