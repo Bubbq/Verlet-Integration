@@ -1,5 +1,6 @@
 #include "headers/raylib.h"
 #include "headers/raymath.h"
+#include <math.h>
 
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
@@ -64,8 +65,9 @@ const float GRAVITY = 1000.0f;
 const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
+// for optimal preformance, let the size of a cell be the diameter of the balls you make
 const int CSIZE = 20;
-const int COL = ((MAXR * 2) / CSIZE), ROW = ((MAXR * 2) / CSIZE);
+const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
 void start_timer(Timer *timer, double lifetime)
 {
@@ -140,7 +142,7 @@ void add_balls(Timer* timer, Circles* circles, float balls_per_second, float con
     {
         start_timer(timer, (1.0f / balls_per_second));
         Vector2 direction = Vector2Normalize(Vector2Subtract(GetMousePosition(), CENTER));
-        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (GRAVITY * 10.0f * -1.0f)), ball_radius, get_random_color()});
+        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 10)), ball_radius, get_random_color()});
     }
 }
 
@@ -161,7 +163,19 @@ void remove_balls(Circles* circles)
     }
 }
 
-void update_playground_statistics(int ball_count, PlaygroundEditor* statistics)
+float max_circle_count(float R, float r)
+{
+    return (0.83 * (powf(R, 2) / powf(r, 2)) - 1.9);
+}
+
+float average_radius(Circles* circles)
+{
+    float average_r = 0;
+    for(int i = 0; i < circles->size; i++) average_r += circles->circle[i].radius;
+    return (average_r / circles->size);
+}
+
+void update_playground_statistics(PlaygroundEditor* statistics,int ball_count)
 {
     char text[1024];
 
@@ -169,13 +183,14 @@ void update_playground_statistics(int ball_count, PlaygroundEditor* statistics)
 	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 100);
 
 	sprintf(text, "%.0fpx", statistics->constraint_radius);
-	GuiSliderBar((Rectangle){MeasureText("BORDER RADIUS", 10) + 10, 23, 80, 10}, "BORDER RADIUS", text, &statistics->constraint_radius, MINR, MAXR);
+	
+    GuiSliderBar((Rectangle){MeasureText("BORDER RADIUS", 10) + 10, 23, 80, 10}, "BORDER RADIUS", text, &statistics->constraint_radius, MINR, MAXR);
     
     sprintf(text, "%.0fpx", statistics->ball_radius); 
 	GuiSliderBar((Rectangle){MeasureText("BALL RADIUS", 10) + 10, 41, 80, 10}, "BALL RADIUS", text, &statistics->ball_radius, 5, 10);
 
     sprintf(text, "%.0f", statistics->gravity_strength); 
-	GuiSliderBar((Rectangle){MeasureText("GRAVITY STRENGTH", 10) + 10, 59, 80, 10}, "GRAVITY STRENGTH", "", &statistics->gravity_strength, 0, (GRAVITY * 5));
+	GuiSliderBar((Rectangle){MeasureText("GRAVITY STRENGTH", 10) + 10, 59, 80, 10}, "GRAVITY STRENGTH", "", &statistics->gravity_strength, 0, GRAVITY * 2);
 
 	sprintf(text, "BALL COUNT: %d", ball_count);
     DrawText(text, 5, 79, 10, GRAY);
@@ -183,11 +198,15 @@ void update_playground_statistics(int ball_count, PlaygroundEditor* statistics)
     DrawFPS(SCRW - 75, 0);
 }
 
-void draw_cells(Grid grid[ROW][COL])
+void draw_cells(Grid grid[ROW][COL], float constraint_radius)
 {
+    char text[10];
     for(int r = 0; r < ROW; r++) 
-        for(int c = 0; c < COL; c++)  
-            DrawRectangleLines(grid[r][c].start.x, grid[r][c].start.y, CSIZE, CSIZE, (c % 2) == 0 ? RED : GREEN);
+        for(int c = 0; c < COL; sprintf(text, "[%d,%d]", r, c), c++)
+        {
+            Rectangle cell_rect = { grid[r][c].start.x, grid[r][c].start.y, CSIZE, CSIZE };  
+            if(CheckCollisionCircleRec(CENTER, constraint_radius, cell_rect)) DrawRectangleLinesEx(cell_rect, 0.75, DARKGREEN);
+        } 
 }
 
 void draw_circles(Circles* circles)
@@ -290,19 +309,19 @@ void clear_grid_index_lists(Grid grid[ROW][COL])
             grid[r][c].index_list.size = 0;
 }
 
-void update_circles(Circles* c, Grid grid[ROW][COL], PlaygroundEditor statistics, float dt)
+void update_circles(Circles* circles, Grid grid[ROW][COL], PlaygroundEditor statistics, float dt)
 {
     clear_grid_index_lists(grid);
 
     int i = 0;
-    for(VerletCirlce* vc = (c->circle + i); (i < c->size); add_circle_to_cell(grid, i, vc->curr_pos), i++, vc = (c->circle + i))
+    for(VerletCirlce* vc = (circles->circle + i); (i < circles->size); add_circle_to_cell(grid, i, vc->curr_pos), i++, vc = (circles->circle + i))
     {
         update_position(vc, dt);
         apply_gravity(&vc->acceleration, statistics.gravity_strength);
         handle_border_collision(&vc->curr_pos, statistics.constraint_radius, vc->radius);
     }
 
-    grid_circle_collision(grid, c);
+    grid_circle_collision(grid, circles);
 }
 
 void init_grid(Grid grid[ROW][COL])
@@ -310,17 +329,15 @@ void init_grid(Grid grid[ROW][COL])
     Vector2 current_position = {(CENTER.x - MAXR), (CENTER.y - MAXR)};
 
     for(int r = 0; r < ROW; r++, current_position = (Vector2){(CENTER.x - MAXR), (current_position.y + CSIZE)})
-    {
         for(int c = 0; c < COL; c++, current_position.x += CSIZE)
-        {
             grid[r][c] = (Cell){ current_position, (IndexList){ 0, malloc(sizeof(int)), sizeof(int) }};
-        }
-    }
 }
 
-void init(Grid grid[ROW][COL])
+void init(Grid grid[ROW][COL], PlaygroundEditor* pe, Circles* c)
 {
     init_grid(grid);
+    *pe = (PlaygroundEditor){ 300, 5, 10, 1000 };
+    *c = (Circles){ 0, sizeof(VerletCirlce), malloc(sizeof(VerletCirlce)) };
 
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
@@ -337,26 +354,32 @@ void deinit(VerletCirlce* alloc_circle_mem, Grid grid[ROW][COL])
 int main()
 {
     float dt;
+    bool show_cells = false;
     Timer add_ball_timer;
-    PlaygroundEditor pe = {300, 5, 10, 1000};
-    
-    Grid grid[ROW][COL];
-    Circles circles = {0, sizeof(VerletCirlce), malloc(sizeof(VerletCirlce))};
 
-    init(grid);
+    Circles circles;
+    Grid grid[ROW][COL];
+    PlaygroundEditor pe;
+
+    init(grid, &pe, &circles);
     
     while(!WindowShouldClose())
     {
         dt = (GetFrameTime() / STEPS);
+        
         add_balls(&add_ball_timer, &circles, pe.balls_per_second, pe.constraint_radius, pe.ball_radius);
+        while(circles.size > max_circle_count(pe.constraint_radius, average_radius(&circles))) circles.size--;
+        
+        if(IsKeyPressed(KEY_C)) show_cells = !show_cells;
+        if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
 
         for(int i = 0; i < STEPS; i++) update_circles(&circles, grid, pe, dt);   
-        if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
+        
         BeginDrawing();
             ClearBackground(BLACK);
-            // draw_cells(grid);
+            if(show_cells) draw_cells(grid, pe.constraint_radius);
             draw_circles(&circles);
-            update_playground_statistics(circles.size, &pe);
+            update_playground_statistics(&pe, circles.size);
             DrawCircleLinesV(CENTER, pe.constraint_radius, RAYWHITE);
         EndDrawing();
     }
@@ -365,5 +388,5 @@ int main()
     return 0;    
 }
 
-// TODO:
-// make restrictions on changing radius of outer circle when its filled
+// TODO: simulate spatial partitioning from show cells function
+// stop balls from spazzing (5px radius)
