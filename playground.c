@@ -66,7 +66,7 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 20;
+const int CSIZE = 10;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
 void start_timer(Timer *timer, double lifetime)
@@ -180,7 +180,7 @@ void update_playground_statistics(PlaygroundEditor* statistics,int ball_count)
     char text[1024];
 
 	sprintf(text, "%.0f BALL(S) PER SECOND", statistics->balls_per_second);
-	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 100);
+	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 200);
 
 	sprintf(text, "%.0fpx", statistics->constraint_radius);
 	
@@ -219,10 +219,8 @@ void handle_circle_collision(VerletCirlce* vc1, VerletCirlce* vc2)
 {
     if(CheckCollisionCircles(vc1->curr_pos, vc1->radius, vc2->curr_pos, vc2->radius))
     {
-        float distance = Vector2Distance(vc1->curr_pos, vc2->curr_pos);
-        
         // how much the 2 circles need to move by 
-        float delta = (vc1->radius + vc2->radius) - distance;
+        float delta = (vc1->radius + vc2->radius) - Vector2Distance(vc1->curr_pos, vc2->curr_pos);
         
         // the axis of collision
         Vector2 n = Vector2Normalize(Vector2Subtract(vc1->curr_pos, vc2->curr_pos));
@@ -294,8 +292,17 @@ void apply_gravity(Vector2* acceleration, float gravity_strength)
 
 void update_position(VerletCirlce* vc, float dt)
 {
+    const float MIN_V = 0.0001f;
+    const float MAX_V = 10.0f;
+    
     Vector2 velocity = Vector2Subtract(vc->curr_pos, vc->old_pos);
+    
+    // slowing down
     velocity = Vector2Subtract(velocity, Vector2Scale(velocity, dt));
+
+    // prevents spazzing and minimal movement
+    if((Vector2Length(velocity) > MAX_V) || Vector2Length(velocity) < MIN_V) velocity = (Vector2){};
+    
     vc->old_pos = vc->curr_pos;
 
     // verlet integration formula -> v(n+1) = v(n) + v + adt^2
@@ -388,5 +395,4 @@ int main()
     return 0;    
 }
 
-// TODO: simulate spatial partitioning from show cells function
-// stop balls from spazzing (5px radius)
+// stop balls from 'jumping'
