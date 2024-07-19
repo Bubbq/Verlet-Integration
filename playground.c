@@ -5,6 +5,7 @@
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
 
+#include <threads.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -54,7 +55,7 @@ typedef struct
 } PlaygroundEditor;
 
 const int FPS = 60;
-const int STEPS = 8;
+int STEPS = 8;
 
 const int SCRH = 900;
 const int SCRW = 900;
@@ -66,8 +67,16 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 10;
+const int CSIZE = 20;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
+
+Grid grid[40][40];
+typedef struct
+{
+    Circles* circles;
+    int start_row;
+    int end_row;
+} ThreadData;
 
 void start_timer(Timer *timer, double lifetime)
 {
@@ -264,6 +273,46 @@ void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
     }
 }
 
+void grid_circle_collision_subgrid(Grid grid[ROW][COL], Circles* circles, int start_row, int end_row)
+{
+    for (int r = start_row; r < end_row; r++)
+    {
+        for (int c = 0; c < COL; c++)
+        {
+            // Same cell circle collision
+            IndexList* il = &grid[r][c].index_list;
+
+            for (int i = 0; i < il->size; i++) 
+                for (int j = i + 1; j < il->size; j++) 
+                    handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[il->indicies[j]]);
+
+            // Neighbor cell circle collisions
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int nr = r + dx;
+                    int nc = c + dy;
+                    IndexList* nil = &grid[nr][nc].index_list;
+                    // Out of bounds case
+                    if ((nr < 0 || nr >= ROW) || (nc < 0 || nc >= COL) || (nr == r && nc == c)) continue;
+
+                    for (int i = 0; i < il->size; i++)
+                        for (int j = 0; j < nil->size; j++)
+                            handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[nil->indicies[j]]);
+                }
+            }
+        }
+    }
+}
+
+int thread_func(void* arg)
+{
+    ThreadData* data = (ThreadData*)arg;
+    grid_circle_collision_subgrid(grid, data->circles, data->start_row, data->end_row);
+    return 0;
+}
+
 void handle_border_collision(Vector2* curr_pos, float constraint_radius, float ball_radius)
 {
     if((Vector2Distance(*curr_pos, CENTER) + ball_radius) >= constraint_radius)
@@ -294,13 +343,11 @@ void update_position(VerletCirlce* vc, float dt)
 {
     const float MIN_V = 0.0001f;
     const float MAX_V = 10.0f;
+    const float DAMP = 0.999f;
     
-    Vector2 velocity = Vector2Subtract(vc->curr_pos, vc->old_pos);
+    Vector2 velocity = Vector2Scale(Vector2Subtract(vc->curr_pos, vc->old_pos), DAMP);
     
-    // slowing down
-    velocity = Vector2Subtract(velocity, Vector2Scale(velocity, dt));
-
-    // prevents spazzing and minimal movement
+    // stops spazzing and minimal movement
     if((Vector2Length(velocity) > MAX_V) || Vector2Length(velocity) < MIN_V) velocity = (Vector2){};
     
     vc->old_pos = vc->curr_pos;
@@ -321,14 +368,30 @@ void update_circles(Circles* circles, Grid grid[ROW][COL], PlaygroundEditor stat
     clear_grid_index_lists(grid);
 
     int i = 0;
-    for(VerletCirlce* vc = (circles->circle + i); (i < circles->size); add_circle_to_cell(grid, i, vc->curr_pos), i++, vc = (circles->circle + i))
+    for(VerletCirlce* vc = (circles->circle + i); (i < circles->size); i++, vc = (circles->circle + i))
     {
+        add_circle_to_cell(grid, i, vc->curr_pos);
         update_position(vc, dt);
         apply_gravity(&vc->acceleration, statistics.gravity_strength);
         handle_border_collision(&vc->curr_pos, statistics.constraint_radius, vc->radius);
     }
 
-    grid_circle_collision(grid, circles);
+    const int THRD_CNT = 10;
+    const int RPT = (ROW / THRD_CNT);
+
+    ThreadData data[THRD_CNT];
+    thrd_t threads[THRD_CNT];
+
+
+    for(int i = 0; i < THRD_CNT; i++)
+    {
+        data[i] = (ThreadData){circles, (i * RPT), (i + 1) * RPT};
+        thrd_create(&threads[i], thread_func, &data[i]);
+    }
+
+    for(int i = 0; i < THRD_CNT; i++) thrd_join(threads[i], NULL);
+
+    // grid_circle_collision(grid, circles);
 }
 
 void init_grid(Grid grid[ROW][COL])
@@ -365,7 +428,7 @@ int main()
     Timer add_ball_timer;
 
     Circles circles;
-    Grid grid[ROW][COL];
+    // Grid grid[ROW][COL];
     PlaygroundEditor pe;
 
     init(grid, &pe, &circles);
@@ -394,5 +457,3 @@ int main()
     deinit(circles.circle, grid);
     return 0;    
 }
-
-// stop balls from 'jumping'
