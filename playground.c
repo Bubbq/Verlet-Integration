@@ -67,13 +67,13 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 20;
+const int CSIZE = 10;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
-Grid grid[40][40];
-typedef struct
-{
-    Circles* circles;
+// Grid grid[80][80];
+// Circles circles;
+
+typedef struct {
     int start_row;
     int end_row;
 } ThreadData;
@@ -179,14 +179,22 @@ float max_circle_count(float R, float r)
 
 float average_radius(Circles* circles)
 {
+    if(circles->size == 0) return 0;
     float average_r = 0;
     for(int i = 0; i < circles->size; i++) average_r += circles->circle[i].radius;
     return (average_r / circles->size);
 }
 
+float average_velocity(Circles* circles)
+{
+    float avg_v = 0.0f;
+    for(int i = 0; i < circles->size; i++) avg_v += Vector2Length(Vector2Subtract(circles->circle[i].curr_pos, circles->circle[i].old_pos));
+    return (avg_v / circles->size);
+}
+
 void update_playground_statistics(PlaygroundEditor* statistics,int ball_count)
 {
-    char text[1024];
+    char text[100];
 
 	sprintf(text, "%.0f BALL(S) PER SECOND", statistics->balls_per_second);
 	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 200);
@@ -199,7 +207,7 @@ void update_playground_statistics(PlaygroundEditor* statistics,int ball_count)
 	GuiSliderBar((Rectangle){MeasureText("BALL RADIUS", 10) + 10, 41, 80, 10}, "BALL RADIUS", text, &statistics->ball_radius, 5, 10);
 
     sprintf(text, "%.0f", statistics->gravity_strength); 
-	GuiSliderBar((Rectangle){MeasureText("GRAVITY STRENGTH", 10) + 10, 59, 80, 10}, "GRAVITY STRENGTH", "", &statistics->gravity_strength, 0, GRAVITY * 2);
+	GuiSliderBar((Rectangle){MeasureText("GRAVITY STRENGTH", 10) + 10, 59, 80, 10}, "GRAVITY STRENGTH", "", &statistics->gravity_strength, 0, (GRAVITY * 1.5));
 
 	sprintf(text, "BALL COUNT: %d", ball_count);
     DrawText(text, 5, 79, 10, GRAY);
@@ -221,7 +229,8 @@ void draw_cells(Grid grid[ROW][COL], float constraint_radius)
 void draw_circles(Circles* circles)
 {
     int i = 0;
-    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i)) DrawCircleV(vc->curr_pos, vc->radius, vc->color);
+    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i)) DrawCircleSector(vc->curr_pos, vc->radius, 0, 360, 1, vc->color);
+
 }
 
 void handle_circle_collision(VerletCirlce* vc1, VerletCirlce* vc2)
@@ -273,45 +282,45 @@ void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
     }
 }
 
-void grid_circle_collision_subgrid(Grid grid[ROW][COL], Circles* circles, int start_row, int end_row)
-{
-    for (int r = start_row; r < end_row; r++)
-    {
-        for (int c = 0; c < COL; c++)
-        {
-            // Same cell circle collision
-            IndexList* il = &grid[r][c].index_list;
+// void grid_circle_collision_subgrid(int start_row, int end_row)
+// {
+//     for (int r = start_row; r < end_row; r++)
+//     {
+//         for (int c = 0; c < COL; c++)
+//         {
+//             // Same cell circle collision
+//             IndexList* il = &grid[r][c].index_list;
 
-            for (int i = 0; i < il->size; i++) 
-                for (int j = i + 1; j < il->size; j++) 
-                    handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[il->indicies[j]]);
+//             for (int i = 0; i < il->size; i++) 
+//                 for (int j = i + 1; j < il->size; j++) 
+//                     handle_circle_collision(&circles.circle[il->indicies[i]], &circles.circle[il->indicies[j]]);
 
-            // Neighbor cell circle collisions
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                for (int dy = -1; dy <= 1; dy++)
-                {
-                    int nr = r + dx;
-                    int nc = c + dy;
-                    IndexList* nil = &grid[nr][nc].index_list;
-                    // Out of bounds case
-                    if ((nr < 0 || nr >= ROW) || (nc < 0 || nc >= COL) || (nr == r && nc == c)) continue;
+//             // Neighbor cell circle collisions
+//             for (int dx = -1; dx <= 1; dx++)
+//             {
+//                 for (int dy = -1; dy <= 1; dy++)
+//                 {
+//                     int nr = r + dx;
+//                     int nc = c + dy;
+//                     IndexList* nil = &grid[nr][nc].index_list;
+//                     // Out of bounds case
+//                     if ((nr < 0 || nr >= ROW) || (nc < 0 || nc >= COL) || (nr == r && nc == c)) continue;
 
-                    for (int i = 0; i < il->size; i++)
-                        for (int j = 0; j < nil->size; j++)
-                            handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[nil->indicies[j]]);
-                }
-            }
-        }
-    }
-}
+//                     for (int i = 0; i < il->size; i++)
+//                         for (int j = 0; j < nil->size; j++)
+//                             handle_circle_collision(&circles.circle[il->indicies[i]], &circles.circle[nil->indicies[j]]);
+//                 }
+//             }
+//         }
+//     }
+// }
 
-int thread_func(void* arg)
-{
-    ThreadData* data = (ThreadData*)arg;
-    grid_circle_collision_subgrid(grid, data->circles, data->start_row, data->end_row);
-    return 0;
-}
+// int thread_func(void* arg)
+// {
+//     ThreadData* data = (ThreadData*)arg;
+//     grid_circle_collision_subgrid(data->start_row, data->end_row);
+//     return 0;
+// }
 
 void handle_border_collision(Vector2* curr_pos, float constraint_radius, float ball_radius)
 {
@@ -341,14 +350,13 @@ void apply_gravity(Vector2* acceleration, float gravity_strength)
 
 void update_position(VerletCirlce* vc, float dt)
 {
-    const float MIN_V = 0.0001f;
+    const float MIN_V = 0.0001;
     const float MAX_V = 10.0f;
     const float DAMP = 0.999f;
     
     Vector2 velocity = Vector2Scale(Vector2Subtract(vc->curr_pos, vc->old_pos), DAMP);
     
-    // stops spazzing and minimal movement
-    if((Vector2Length(velocity) > MAX_V) || Vector2Length(velocity) < MIN_V) velocity = (Vector2){};
+    if(Vector2Length(velocity) > MAX_V || Vector2Length(velocity) < MIN_V) velocity = (Vector2){};
     
     vc->old_pos = vc->curr_pos;
 
@@ -375,23 +383,22 @@ void update_circles(Circles* circles, Grid grid[ROW][COL], PlaygroundEditor stat
         apply_gravity(&vc->acceleration, statistics.gravity_strength);
         handle_border_collision(&vc->curr_pos, statistics.constraint_radius, vc->radius);
     }
+    
+    // const int THRD = 4;
+    // ThreadData data[THRD];
+    // thrd_t threads[THRD];
 
-    const int THRD_CNT = 10;
-    const int RPT = (ROW / THRD_CNT);
+    // int rows_per_thread = ROW / THRD;
 
-    ThreadData data[THRD_CNT];
-    thrd_t threads[THRD_CNT];
+    // for (int i = 0; i < THRD; i++)
+    // {
+    //     data[i] = (ThreadData){ (i * rows_per_thread), ((i + 1) * rows_per_thread) };
+    //     thrd_create(&threads[i], thread_func, &data[i]);
+    // }
 
+    // for (int i = 0; i < THRD; i++) thrd_join(threads[i], NULL);
 
-    for(int i = 0; i < THRD_CNT; i++)
-    {
-        data[i] = (ThreadData){circles, (i * RPT), (i + 1) * RPT};
-        thrd_create(&threads[i], thread_func, &data[i]);
-    }
-
-    for(int i = 0; i < THRD_CNT; i++) thrd_join(threads[i], NULL);
-
-    // grid_circle_collision(grid, circles);
+    grid_circle_collision(grid, circles);
 }
 
 void init_grid(Grid grid[ROW][COL])
@@ -428,7 +435,7 @@ int main()
     Timer add_ball_timer;
 
     Circles circles;
-    // Grid grid[ROW][COL];
+    Grid grid[ROW][COL];
     PlaygroundEditor pe;
 
     init(grid, &pe, &circles);
@@ -436,10 +443,30 @@ int main()
     while(!WindowShouldClose())
     {
         dt = (GetFrameTime() / STEPS);
+
+        float mcc = max_circle_count(pe.constraint_radius, average_radius(&circles));
         
         add_balls(&add_ball_timer, &circles, pe.balls_per_second, pe.constraint_radius, pe.ball_radius);
-        while(circles.size > max_circle_count(pe.constraint_radius, average_radius(&circles))) circles.size--;
+        while(circles.size > mcc) circles.size--;
         
+        // correct spazzing
+        while(average_velocity(&circles) > 2 && abs((int)(circles.size - mcc)) < 150)
+        {
+            float mdist = 0.0f;
+            int idx;
+
+            for(int i = 0; i < circles.size; i++)
+            {
+                if(Vector2Distance(circles.circle[i].curr_pos, CENTER) > mdist)
+                {
+                    mdist = Vector2Distance(circles.circle[i].curr_pos, CENTER);
+                    idx = i;
+                }
+            }
+
+            delete_verlet_circle(&circles, idx);
+        }
+
         if(IsKeyPressed(KEY_C)) show_cells = !show_cells;
         if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) remove_balls(&circles);
 
