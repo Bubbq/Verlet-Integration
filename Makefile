@@ -1,5 +1,5 @@
 all:
-	gcc playground.c -o run -lraylib -lm -Wall
+	gcc link.c -o run -lraylib -lm -Wall
 clean:
 	rm run
 	clear
