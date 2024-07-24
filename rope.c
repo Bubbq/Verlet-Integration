@@ -20,12 +20,6 @@ const Vector2 CENTER = { (SCRW / 2.0f), (SCRH / 2.0f) };
 
 const float DAMP = 0.950f;
 
-typedef enum
-{
-    FREE = 0,
-    SUSPENDED = 1,
-} Status;
-
 typedef struct
 {
     Vector2 curr_pos;
@@ -33,7 +27,6 @@ typedef struct
     Vector2 acceleration;
     float radius;
     Color color;
-    Status status;
 } VerletCirlce;
 
 typedef struct
@@ -120,13 +113,11 @@ int main()
     
     // adding circles   
     for(int i = 0; i < CC; i++)
-        add_verlet_circle(&circles, (VerletCirlce){(Vector2){ CENTER.x, CENTER.y + (i * R * 2)}, (Vector2){CENTER.x, CENTER.y + (i * R * 2)}, GRAVITY, R, RAYWHITE, FREE });
+        add_verlet_circle(&circles, (VerletCirlce){(Vector2){ CENTER.x, CENTER.y + (i * R * 2)}, (Vector2){CENTER.x, CENTER.y + (i * R * 2)}, GRAVITY, R, RAYWHITE });
 
     // applying Chain
     for(int i = 0, j = 1; j < circles.size; i++, j++)
         add_link(&chain, (Link){ (circles.circle + i), (circles.circle + j), (R * 2) });
-
-    circles.circle[0].status = SUSPENDED;
 
     init();
     
@@ -156,8 +147,7 @@ int main()
             }
 
             // gravity
-            if(circles.circle[i].status == FREE)
-                circles.circle[i].curr_pos = Vector2Add(circles.circle[i].curr_pos, Vector2Scale(GRAVITY, dt));
+            circles.circle[i].curr_pos = Vector2Add(circles.circle[i].curr_pos, Vector2Scale(GRAVITY, dt));
             
             // border collsion
             if((circles.circle[i].curr_pos.y + circles.circle[i].radius) >= SCRH)

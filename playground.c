@@ -65,7 +65,7 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 10;
+const int CSIZE = 20;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
 void start_timer(Timer *timer, double lifetime)
