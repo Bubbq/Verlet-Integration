@@ -8,15 +8,17 @@
 #include <stdio.h>
 
 const int FPS = 60;
-const int SCRW = 750, SCRH = 750;
+const int SCRW = 900, SCRH = 900;
 
-const int ROW = 100, COL = 100;
+const int ROW = 50, COL = 50;
 
 const int YPAD = 30;
 const int XPAD = 100;
 
 const int XDIST = ((SCRW - (2 * XPAD)) / (COL - 1));
 const int YDIST = ((SCRH - (2 * YPAD)) / (ROW - 1));
+
+const Vector2 GRAVITY = { 0, 1000.0f };
 
 typedef enum
 {
@@ -94,21 +96,23 @@ void update_position(VerletCirlce * vc)
 {
     const float DAMP = 0.950f;
     Vector2 velocity = Vector2Scale(Vector2Subtract(vc->curr_pos, vc->old_pos), DAMP);
+
     vc->old_pos = vc->curr_pos;
     vc->curr_pos = Vector2Add(vc->curr_pos, Vector2Add(velocity, Vector2Scale(vc->acceleration, powf(GetFrameTime(), 2.0f))));
 }
 
-void update_circles(Circles* circles)
+void update_circles(Circles* circles, int* grabbed_link_pos)
 {
     int i = 0;
     for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i))
     {
+        if(CheckCollisionPointCircle(GetMousePosition(), vc->curr_pos, vc->radius) && !(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)))
+            *grabbed_link_pos = i;
+
         switch(vc->status)
         {
             case FREE: update_position(vc); break;  
             case SUSPENDED: vc->curr_pos = (Vector2){ XPAD + (XDIST * (i % (COL))), YPAD }; break;
-            default:
-                break;
         }
 
         if(vc->curr_pos.y >= SCRH + vc->radius)
@@ -116,46 +120,46 @@ void update_circles(Circles* circles)
     }
 }
 
-void draw_circles(Circles* circles)
-{
-    int i = 0;
-    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i))
-        DrawCircleSector(vc->curr_pos, vc->radius, 0, 360, 2, vc->color);
-}
-
 void update_links(Chain* chain)
 {
-    const float SCALE = 0.35f;
+    const float SCALE = 0.30f;
+    const float MAX_DIST = 300.0f;
 
     for(int i = 0; i < chain->size; i++)
     {
-        // maintaining link distance
-        if((Vector2Distance(chain->link[i].vc1->curr_pos, chain->link[i].vc2->curr_pos)) >= chain->link[i].target_distance)
-        {
-            float circle_distance = Vector2Distance(chain->link[i].vc1->curr_pos, chain->link[i].vc2->curr_pos);
-            float delta = chain->link[i].target_distance - circle_distance;
-            Vector2 n = Vector2Normalize(Vector2Subtract(chain->link[i].vc1->curr_pos, chain->link[i].vc2->curr_pos));
-
-            chain->link[i].vc1->curr_pos = Vector2Add(chain->link[i].vc1->curr_pos, Vector2Scale(n, (delta * SCALE)));
-            chain->link[i].vc2->curr_pos = Vector2Subtract(chain->link[i].vc2->curr_pos, Vector2Scale(n, (delta * SCALE)));
-        }
+        Vector2 starting_position = chain->link[i].vc1->curr_pos, 
+                ending_position = chain->link[i].vc2->curr_pos;
         
-        // deleting link with mouse
-        if(IsMouseButtonDown(MOUSE_LEFT_BUTTON) && CheckCollisionPointLine(GetMousePosition(), chain->link[i].vc1->curr_pos, chain->link[i].vc2->curr_pos, 15))
+        float circle_distance = Vector2Distance(starting_position, ending_position);
+
+        // snapping chain if distance is too far or ripping cloth with mouse
+        if((circle_distance >= MAX_DIST) ||  ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
             remove_link(chain, i);
+        
+        // maintaining link distance
+        else if(circle_distance >= chain->link[i].target_distance)
+        {
+            // magnitude of movement
+            float delta = chain->link[i].target_distance - circle_distance;
+            
+            // direction of movement
+            Vector2 direction = Vector2Normalize(Vector2Subtract(chain->link[i].vc1->curr_pos, chain->link[i].vc2->curr_pos));
+
+            chain->link[i].vc1->curr_pos = Vector2Add(chain->link[i].vc1->curr_pos, Vector2Scale(direction, (delta * SCALE)));
+            chain->link[i].vc2->curr_pos = Vector2Subtract(chain->link[i].vc2->curr_pos, Vector2Scale(direction, (delta * SCALE)));
+        }
     }   
 }
 
 void draw_links(Chain* chain)
 {
     for(int i = 0; i < chain->size; i++)
-        DrawLine(chain->link[i].vc1->curr_pos.x, chain->link[i].vc1->curr_pos.y, chain->link[i].vc2->curr_pos.x, chain->link[i].vc2->curr_pos.y, RAYWHITE);
+        DrawLine(chain->link[i].vc1->curr_pos.x, chain->link[i].vc1->curr_pos.y, chain->link[i].vc2->curr_pos.x, chain->link[i].vc2->curr_pos.y, LIGHTGRAY);
 }
 
 void init_circles(Circles* circles)
 {
     const int RADIUS = 5;
-    const Vector2 GRAVITY = { 0, 3000.0f };
 
     Vector2 vc_position = { XPAD, YPAD };
     
@@ -212,26 +216,34 @@ void deinit(VerletCirlce* alloc_circle_mem, Link* alloc_link_mem)
     CloseWindow();
 }
 
+void pull_cloth(Circles* circles, int current_link)
+{
+    if((current_link != -1) && (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))) 
+        circles->circle[current_link].curr_pos = GetMousePosition(); 
+}
+
 int main()
 {
 	Chain chain = { 0, sizeof(Link), malloc(sizeof(Link)) };
     Circles circles = { 0, sizeof(VerletCirlce), malloc(sizeof(VerletCirlce)) };
 
-    init(&circles, &chain);
+    int current_link = -1;
 
+    init(&circles, &chain);
+    
     while(!WindowShouldClose())
     {
         update_links(&chain);
-        update_circles(&circles);
+        update_circles(&circles, &current_link);
+        
+        pull_cloth(&circles, current_link);
 
         BeginDrawing();
             ClearBackground(BLACK);
 			draw_links(&chain);
-			DrawFPS(0, 0);
+            DrawFPS(0, 0);
 		EndDrawing();
     }
 
     return 0;    
 }
-
-// TODO: 'grab' function, able to make row & col diff numbers split code in different programs with verlet physics 
