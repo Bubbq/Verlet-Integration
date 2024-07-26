@@ -1,7 +1,6 @@
-#include "headers/physics.h"
 #include "headers/raylib.h"
 #include "headers/raymath.h"
-
+#include "headers/physics.h"
 #include <stdlib.h>
 
 const int SCRW = 900, SCRH = 900;
@@ -22,18 +21,25 @@ const Vector2 WORLD_GRAVITY = { 0, 2000.0f };
 
 void update_circles(Circles* circles, int* grabbed_link_pos)
 {
+    const float DAMP = 0.980f;
     int i = 0;
+
     for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i))
     {
         if(CheckCollisionPointCircle(GetMousePosition(), vc->current_position, vc->radius) && !(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)))
             *grabbed_link_pos = i;
         
-        apply_gravity(vc, WORLD_GRAVITY);
+        apply_gravity(vc, WORLD_GRAVITY, GetFrameTime());
 
         switch(vc->status)
         {
-            case FREE: update_position(vc, GetFrameTime()); break;  
-            case SUSPENDED: vc->current_position = (Vector2){ XPAD + (XDIST * (i % (COL))), YPAD }; break;
+            case FREE: 
+                update_position(vc, DAMP, GetFrameTime()); 
+                break;  
+
+            case SUSPENDED: 
+                vc->current_position = (Vector2){ XPAD + (XDIST * (i % (COL))), YPAD };
+                break;
         }
 
         if(vc->current_position.y >= SCRH + vc->radius)
@@ -51,8 +57,11 @@ void update_links(Chain* chain)
         float circle_distance = Vector2Distance(starting_position, ending_position);
 
         // snapping chain if distance is too far or ripping cloth with mouse
-        if((circle_distance >= MAX_LINK_DIST) ||  ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
+        if((circle_distance >= MAX_LINK_DIST) ||
+          ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
+        {
             remove_link(chain, i);
+        }
         
         maintain_link(&chain->link[i]);
     }   

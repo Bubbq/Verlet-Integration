@@ -1,5 +1,5 @@
-#ifndef VPHYSICS_H_
-#define VPHYSICS_H_
+#ifndef VERLET_PHYSICS_H_
+#define VERLET_PHYSICS_H_
 
 #include "raylib.h"
 #include <stdlib.h>
@@ -20,10 +20,10 @@ typedef struct
     Vector2 previous_position;
 } VerletCirlce;
 
-// void handle_verlet_circle_collision(VerletCirlce*, VerletCirlce*);
-// void handle_border_collision(VerletCirlce*, Vector2, float);
-void apply_gravity(VerletCirlce*, Vector2);
-void update_position(VerletCirlce*,float);
+void handle_border_collision(VerletCirlce* circle, Vector2 constraint_center, Vector2 world_gravity, float constraint_radius);
+void handle_verlet_circle_collision(VerletCirlce* circle1, VerletCirlce* circle2);
+void update_position(VerletCirlce* circle, float slow_down_scale, float dt);
+void apply_gravity(VerletCirlce* circle, Vector2 world_gravity, float dt);
 
 typedef struct
 {
@@ -32,9 +32,9 @@ typedef struct
     VerletCirlce* circle;
 } Circles;
 
-void add_verlet_circle(Circles*,VerletCirlce);
-// void remove_verlet_circle(Circles*,int);
-void resize_circles(Circles*);
+void add_verlet_circle(Circles* circles, VerletCirlce circle);
+void remove_verlet_circle(Circles* circles, int position);
+void resize_circles(Circles* circles);
 
 typedef struct
 {
@@ -43,7 +43,7 @@ typedef struct
     float target_distance;
 } Link;
 
-void maintain_link(Link*);
+void maintain_link(Link* link);
 
 typedef struct
 {
@@ -52,8 +52,8 @@ typedef struct
 	size_t capacity;
 } Chain;
 
-void resize_chain(Chain*);
-void add_link(Chain*,Link);
-void remove_link(Chain*,int);
+void add_link(Chain* chain, Link link);
+void remove_link(Chain* chain, int position);
+void resize_chain(Chain* chain);
 
 #endif

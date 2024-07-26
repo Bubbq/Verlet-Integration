@@ -1,27 +1,12 @@
 #include "headers/raylib.h"
 #include "headers/raymath.h"
+#include "headers/physics.h"
 
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
 
 #include <stdlib.h>
 #include <stdio.h>
-
-typedef struct
-{
-    Vector2 curr_pos;
-    Vector2 old_pos;
-    Vector2 acceleration;
-    float radius;
-    Color color;
-} VerletCirlce;
-
-typedef struct
-{
-    int size;
-    size_t capacity;
-    VerletCirlce* circle;
-} Circles;
 
 typedef struct
 {
@@ -65,7 +50,7 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 10;
+const int CSIZE = 20;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
 void start_timer(Timer *timer, double lifetime)
@@ -96,12 +81,6 @@ void resize_index_list(IndexList* il)
     il->indicies = realloc(il->indicies, il->capacity);
 }
 
-void resize_circles(Circles* c)
-{
-    c->capacity *= 2;
-    c->circle = realloc(c->circle, c->capacity);
-}
-
 void add_circle_index(IndexList* il, int index)
 {
     if((il->size * sizeof(int)) == il->capacity) 
@@ -110,39 +89,23 @@ void add_circle_index(IndexList* il, int index)
     il->indicies[il->size++] = index;
 }
 
-void add_verlet_circle(Circles* circles, VerletCirlce vc)
-{
-    if((circles->size * sizeof(VerletCirlce)) == circles->capacity) 
-        resize_circles(circles);
-
-    circles->circle[circles->size++] = vc;
-}
-
 void add_balls(Timer* timer, Circles* circles, float balls_per_second, float constraint_radius, float ball_radius)
 {
     if((IsMouseButtonDown(MOUSE_LEFT_BUTTON)) && (timer_done(*timer)) && (CheckCollisionPointCircle(GetMousePosition(), CENTER, constraint_radius)) && (Vector2Distance(GetMousePosition(), CENTER) < (constraint_radius - ball_radius)))
     {
         start_timer(timer, (1.0f / balls_per_second));
         Vector2 direction = Vector2Normalize(Vector2Subtract(GetMousePosition(), CENTER));
-        add_verlet_circle(circles, (VerletCirlce){GetMousePosition(), GetMousePosition(), Vector2Scale(direction, (-GRAVITY * 30)), ball_radius, get_random_color()});
+        add_verlet_circle(circles, (VerletCirlce){ get_random_color(), ball_radius, FREE, Vector2Scale(direction, (GRAVITY * -1 * 30)), GetMousePosition(), GetMousePosition() });
     }
-}
-
-void delete_verlet_circle(Circles* circles, int pos)
-{
-    for(int i = pos; i < circles->size; i++) 
-        circles->circle[i] = circles->circle[i + 1];
-    
-    circles->size--;
 }
 
 void remove_balls(Circles* circles)
 {
     for(int i = 0; i < circles->size; i++)
     {
-        if(CheckCollisionCircles(GetMousePosition(), 10, circles->circle[i].curr_pos, circles->circle[i].radius))
+        if(CheckCollisionCircles(GetMousePosition(), 10, circles->circle[i].current_position, circles->circle[i].radius))
         {
-            delete_verlet_circle(circles, i);
+            remove_verlet_circle(circles, i);
         }
     }
 }
@@ -168,7 +131,7 @@ void change_playground_statistics(PlaygroundEditor* statistics, int ball_count)
     char text[100];
 
 	sprintf(text, "%.0f BALL(S) PER SECOND", statistics->balls_per_second);
-	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 300);
+	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 25);
 
 	sprintf(text, "%.0fpx", statistics->constraint_radius);
     GuiSliderBar((Rectangle){MeasureText("BORDER RADIUS", 10) + 10, 23, 80, 10}, "BORDER RADIUS", text, &statistics->constraint_radius, MINR, MAXR);
@@ -188,25 +151,8 @@ void change_playground_statistics(PlaygroundEditor* statistics, int ball_count)
 void draw_circles(Circles* circles)
 {
     int i = 0;
-    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i)) DrawCircleSector(vc->curr_pos, vc->radius, 0, 360, 1, vc->color);
-}
-
-void handle_circle_collision(VerletCirlce* vc1, VerletCirlce* vc2)
-{
-    const float SCALE = 0.40f;
-
-    if(CheckCollisionCircles(vc1->curr_pos, vc1->radius, vc2->curr_pos, vc2->radius))
-    {
-        // how much the 2 circles need to move by 
-        float delta = (vc1->radius + vc2->radius) - Vector2Distance(vc1->curr_pos, vc2->curr_pos);
-        
-        // the axis of collision
-        Vector2 n = Vector2Normalize(Vector2Subtract(vc1->curr_pos, vc2->curr_pos));
-        
-        // move circles away from one another 
-        vc1->curr_pos = Vector2Add(vc1->curr_pos, Vector2Scale(n, (delta  * SCALE)));
-        vc2->curr_pos = Vector2Subtract(vc2->curr_pos, Vector2Scale(n, (delta  * SCALE)));
-    }
+    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i)) 
+        DrawCircleSector(vc->current_position, vc->radius, 0, 360, 1, vc->color);
 }
 
 void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
@@ -219,7 +165,7 @@ void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
 
             for (int i = 0; i < il->size; i++) 
                 for (int j = i + 1; j < il->size; j++) 
-                    handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[il->indicies[j]]);
+                    handle_verlet_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[il->indicies[j]]);
 
             // neighbor cell circle collisions
             for (int dx = -1; dx <= 1; dx++)
@@ -233,19 +179,9 @@ void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
                     
                     for (int i = 0; i < il->size; i++)
                         for (int j = 0; j < nil->size; j++)
-                            handle_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[nil->indicies[j]]);
+                            handle_verlet_circle_collision(&circles->circle[il->indicies[i]], &circles->circle[nil->indicies[j]]);
                 }
         }
-}
-
-void handle_border_collision(Vector2* curr_pos, Vector2* accel, float constraint_radius, float ball_radius, float gravity_strength)
-{
-    if((Vector2Distance(*curr_pos, CENTER) + ball_radius) >= constraint_radius)
-    {
-        Vector2 n = Vector2Normalize(Vector2Subtract(*curr_pos, CENTER));
-        *curr_pos = Vector2Add(CENTER, Vector2Scale(n,(constraint_radius - ball_radius)));
-        *accel = Vector2Scale(*accel, -1);
-    }
 }
 
 void add_circle_to_cell(Grid grid[ROW][COL], int c_index, Vector2 position)
@@ -254,27 +190,6 @@ void add_circle_to_cell(Grid grid[ROW][COL], int c_index, Vector2 position)
     int r = ((position.y - grid[0][0].start.y) / CSIZE);
     
     if((r < ROW) && (c < COL)) add_circle_index(&grid[r][c].index_list, c_index);
-}
-
-// deccelerate current accel to (0, gravity_strength) in one second
-void apply_gravity(Vector2* acceleration, float gravity_strength)
-{
-    *acceleration = Vector2Add(*acceleration, Vector2Scale((Vector2){ (0 - acceleration->x), (gravity_strength - acceleration->y) }, GetFrameTime()));
-}
-
-void update_position(VerletCirlce* vc, float dt)
-{
-    // slowdown factor
-    const float DAMP = 0.995f;
-    // const float MAX_V = 10.0f;
-    
-    Vector2 velocity = Vector2Scale(Vector2Subtract(vc->curr_pos, vc->old_pos), DAMP);
-    // if((Vector2Length(velocity) > MAX_V)) velocity = (Vector2){};
-    
-    vc->old_pos = vc->curr_pos;
-
-    // verlet integration formula -> v(n+1) = v(n) + v + adt^2
-    vc->curr_pos = Vector2Add(vc->curr_pos, Vector2Add(velocity, Vector2Scale(vc->acceleration, powf(dt, 2.0f))));
 }
 
 void clear_grid_index_lists(Grid grid[ROW][COL])
@@ -291,10 +206,10 @@ void update_circles(Circles* circles, Grid grid[ROW][COL], PlaygroundEditor stat
     int i = 0;
     for(VerletCirlce* vc = (circles->circle + i); (i < circles->size); i++, vc = (circles->circle + i))
     {
-        add_circle_to_cell(grid, i, vc->curr_pos);
-        update_position(vc, dt);
-        apply_gravity(&vc->acceleration, statistics.gravity_strength);
-        handle_border_collision(&vc->curr_pos, &vc->acceleration, statistics.constraint_radius, vc->radius, statistics.gravity_strength);
+        add_circle_to_cell(grid, i, vc->current_position);
+        update_position(vc, 0.995f, dt);
+        apply_gravity(vc, (Vector2){ 0, statistics.gravity_strength }, GetFrameTime());
+        handle_border_collision(vc, CENTER, (Vector2){ 0, statistics.gravity_strength }, statistics.constraint_radius);
     }
 
     grid_circle_collision(grid, circles);
