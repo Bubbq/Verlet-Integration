@@ -65,7 +65,7 @@ const float MINR = 100.0f;
 const float MAXR = 400.0f;
 
 // for optimal preformance, let the size of a cell be the diameter of the balls you make
-const int CSIZE = 20;
+const int CSIZE = 10;
 const int ROW = ((MAXR * 2) / CSIZE), COL = ((MAXR * 2) / CSIZE);
 
 void start_timer(Timer *timer, double lifetime)
@@ -168,7 +168,7 @@ void change_playground_statistics(PlaygroundEditor* statistics, int ball_count)
     char text[100];
 
 	sprintf(text, "%.0f BALL(S) PER SECOND", statistics->balls_per_second);
-	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 25);
+	GuiSliderBar((Rectangle){MeasureText("ADD SPEED", 10) + 10, 5, 80, 10}, "ADD SPEED", text, &statistics->balls_per_second, 1, 300);
 
 	sprintf(text, "%.0fpx", statistics->constraint_radius);
     GuiSliderBar((Rectangle){MeasureText("BORDER RADIUS", 10) + 10, 23, 80, 10}, "BORDER RADIUS", text, &statistics->constraint_radius, MINR, MAXR);
@@ -193,7 +193,7 @@ void draw_circles(Circles* circles)
 
 void handle_circle_collision(VerletCirlce* vc1, VerletCirlce* vc2)
 {
-    const float SCALE = 0.875f;
+    const float SCALE = 0.40f;
 
     if(CheckCollisionCircles(vc1->curr_pos, vc1->radius, vc2->curr_pos, vc2->radius))
     {
@@ -204,8 +204,8 @@ void handle_circle_collision(VerletCirlce* vc1, VerletCirlce* vc2)
         Vector2 n = Vector2Normalize(Vector2Subtract(vc1->curr_pos, vc2->curr_pos));
         
         // move circles away from one another 
-        vc1->curr_pos = Vector2Add(vc1->curr_pos, Vector2Scale(n, (delta / 2) * SCALE));
-        vc2->curr_pos = Vector2Subtract(vc2->curr_pos, Vector2Scale(n, (delta / 2) * SCALE));
+        vc1->curr_pos = Vector2Add(vc1->curr_pos, Vector2Scale(n, (delta  * SCALE)));
+        vc2->curr_pos = Vector2Subtract(vc2->curr_pos, Vector2Scale(n, (delta  * SCALE)));
     }
 }
 
@@ -244,7 +244,7 @@ void handle_border_collision(Vector2* curr_pos, Vector2* accel, float constraint
     {
         Vector2 n = Vector2Normalize(Vector2Subtract(*curr_pos, CENTER));
         *curr_pos = Vector2Add(CENTER, Vector2Scale(n,(constraint_radius - ball_radius)));
-        *accel = (Vector2){ 0, gravity_strength };
+        *accel = Vector2Scale(*accel, -1);
     }
 }
 
@@ -266,10 +266,10 @@ void update_position(VerletCirlce* vc, float dt)
 {
     // slowdown factor
     const float DAMP = 0.995f;
-    const float MAX_V = 10.0f;
+    // const float MAX_V = 10.0f;
     
     Vector2 velocity = Vector2Scale(Vector2Subtract(vc->curr_pos, vc->old_pos), DAMP);
-    if((Vector2Length(velocity) > MAX_V)) velocity = (Vector2){};
+    // if((Vector2Length(velocity) > MAX_V)) velocity = (Vector2){};
     
     vc->old_pos = vc->curr_pos;
 
