@@ -7,63 +7,50 @@ const int SCRW = 900, SCRH = 900;
 const int FPS = 60;
 
 const int ROW = 50, COL = 50;
-const int RADIUS = 5;
 
 const int XPAD = 100;
 const int YPAD = 30;
 
 const int XDIST = ((SCRW - (2 * XPAD)) / (COL - 1));
-const int YDIST = 1;
+// const int YDIST = ((SCRW - (2 * YPAD)) / (ROW - 1));
 
-const float MAX_LINK_DIST = 300.0f;
+const int YDIST = 1;
 
 const Vector2 WORLD_GRAVITY = { 0, 2000.0f };
 
 void update_circles(Circles* circles, int* grabbed_link_pos)
 {
-    const float DAMP = 0.980f;
-    int i = 0;
+    // slowdown scale factor
+    const float DAMP = 0.975f;
 
+    int i = 0;
     for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i))
     {
         if(CheckCollisionPointCircle(GetMousePosition(), vc->current_position, vc->radius) && !(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)))
             *grabbed_link_pos = i;
         
-        apply_gravity(vc, WORLD_GRAVITY, GetFrameTime());
-
-        switch(vc->status)
-        {
-            case FREE: 
-                update_position(vc, DAMP, GetFrameTime()); 
-                break;  
-
-            case SUSPENDED: 
-                vc->current_position = (Vector2){ XPAD + (XDIST * (i % (COL))), YPAD };
-                break;
-        }
-
-        if(vc->current_position.y >= SCRH + vc->radius)
-            vc->current_position.y = SCRH + vc->radius;
+        if(vc->status == FREE)
+            apply_gravity(vc, WORLD_GRAVITY, GetFrameTime());
+        
+        update_position(vc, DAMP, GetFrameTime());
     }
 }
 
 void update_links(Chain* chain)
 {
-    for(int i = 0; i < chain->size; i++)
-    {
-        Vector2 starting_position = chain->link[i].circle1->current_position, 
-                ending_position = chain->link[i].circle2->current_position;
-        
-        float circle_distance = Vector2Distance(starting_position, ending_position);
+    const float MAX_LINK_DIST = 250.0f;
 
-        // snapping chain if distance is too far or ripping cloth with mouse
-        if((circle_distance >= MAX_LINK_DIST) ||
-          ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
-        {
-            remove_link(chain, i);
-        }
+    int l = 0;
+    for(Link* link = chain->link; l < chain->size; l++, link = (chain->link + l))
+    {
+        Vector2 starting_position = link->circle1->current_position, 
+                ending_position = link->circle2->current_position;
         
-        maintain_link(&chain->link[i]);
+        // snapping chain if distance is too far or ripping cloth with mouse
+        if((Vector2Distance(starting_position, ending_position) >= MAX_LINK_DIST) || ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
+            remove_link(chain, l);
+        
+        maintain_link(link);
     }   
 }
 
@@ -73,24 +60,49 @@ void draw_links(Chain* chain)
         DrawLine(chain->link[i].circle1->current_position.x, chain->link[i].circle1->current_position.y, chain->link[i].circle2->current_position.x, chain->link[i].circle2->current_position.y, LIGHTGRAY);
 }
 
+void drawcircles(Circles* circles)
+{
+    int c = 0;
+    for(VerletCirlce* vc = circles->circle; c < circles->size; c++, vc = (circles->circle + c))
+        DrawCircleSector(vc->current_position, vc->radius, 0, 360, 1, vc->color);
+}
+
 void init_circles(Circles* circles)
 {
     const int RADIUS = 5;
-    
+ 
+    circles->size = 0;
+    circles->capacity = sizeof(VerletCirlce);
+    circles->circle = malloc(circles->capacity);
+
     Vector2 vc_position = { XPAD, YPAD };
     
     for(int r = 0; r < ROW; r++, vc_position = (Vector2){ XPAD, (YDIST * r) })
         for(int c = 0; c < COL; (vc_position.x += XDIST), c++)
-            add_verlet_circle(circles, (VerletCirlce){ RAYWHITE, RADIUS, (r == 0 ) ? SUSPENDED : FREE, (Vector2){}, vc_position, vc_position, });
+        {
+            VerletCirlce verlet_circle;
+
+            verlet_circle.color = LIGHTGRAY;
+            verlet_circle.radius = RADIUS;
+            verlet_circle.status = (r == 0) ? SUSPENDED : FREE;
+            verlet_circle.acceleration = (Vector2){ 0 };
+            verlet_circle.current_position = verlet_circle.previous_position = vc_position;
+
+            add_verlet_circle(circles, verlet_circle);
+        }
 }
 
 void init_chain(Chain* chain, Circles* circles)
 {
+    chain->size = 0;
+    chain->capacity = sizeof(Link);
+    chain->link = malloc(chain->capacity);
+
     for(int r = 0; r < ROW; r++)
     {
         for(int c = 0; c < COL; c++)
         {
-            // one dim index
+            // one dimensional index representation of  2d array
             int i_index = (r * ROW) + c;
 
             for(int dx = -1; dx <= 1; dx++)
@@ -102,24 +114,39 @@ void init_chain(Chain* chain, Circles* circles)
                     int nc = (c + dy);
                     int j_index = (nr * ROW) + nc; 
                     
-                    if((nr >= ROW || nr < 0) || (nc >= COL || nc < 0) || ((nr == r) && (nc == c))) continue;
+                    if((nr >= ROW || nr < 0) || (nc >= COL || nc < 0) || ((nr == r) && (nc == c))) 
+                        continue;
+
+                    Link link;
+
+                    link.circle1 = (circles->circle + i_index);
+                    link.circle2 = (circles->circle + j_index);
 
                     if(r == nr)
-					    add_link(chain, (Link){ (circles->circle + i_index), (circles->circle + j_index), XDIST });
+                    {
+                        link.target_distance = XDIST;
+                        add_link(chain, link);
+                    }
 
                     else if(c == nc)
-    					add_link(chain, (Link){ (circles->circle + i_index), (circles->circle + j_index), YDIST });
+                    {
+                        link.target_distance = YDIST;
+                        add_link(chain, link);
+                    }
                 }
             }
         }
     }
 }
 
-void init(Circles* circles, Chain* chain)
+void pull_cloth(Circles* circles, int index)
 {
-    init_circles(circles);
-    init_chain(chain, circles);
+    if((index != -1) && (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))) 
+        circles->circle[index].current_position = GetMousePosition(); 
+}
 
+void init()
+{
     SetTargetFPS(FPS);
     SetTraceLogLevel(LOG_ERROR);
     InitWindow(SCRW, SCRH, "Cloth Demo");
@@ -132,32 +159,32 @@ void deinit(VerletCirlce* alloc_circle_mem, Link* alloc_link_mem)
     CloseWindow();
 }
 
-void pull_cloth(Circles* circles, int current_link)
-{
-    if((current_link != -1) && (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))) 
-        circles->circle[current_link].current_position = GetMousePosition(); 
-}
-
 int main()
 {
-	Chain chain = { 0, malloc(sizeof(Link)), sizeof(Link) };
-    Circles circles = { 0, sizeof(VerletCirlce), malloc(sizeof(VerletCirlce)) };
+	Chain chain;
+    Circles circles;
 
-    int current_link = -1;
-
-    init(&circles, &chain);
+    bool show_circles = false;
+    int grabbed_link_index = -1;
     
+    init();
+    init_circles(&circles);
+    init_chain(&chain, &circles);
+
     while(!WindowShouldClose())
     {
         update_links(&chain);
-        update_circles(&circles, &current_link);
+        update_circles(&circles, &grabbed_link_index);
         
-        pull_cloth(&circles, current_link);
+        pull_cloth(&circles, grabbed_link_index);
+        if(IsKeyPressed(KEY_C))
+            show_circles = !show_circles;
 
         BeginDrawing();
             ClearBackground(BLACK);
+            if(show_circles)
+                drawcircles(&circles);
 			draw_links(&chain);
-            DrawFPS(0, 0);
 		EndDrawing();
     }
 

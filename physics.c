@@ -82,8 +82,11 @@ void maintain_link(Link* link)
         float delta = link->target_distance - circle_distance;
         Vector2 direction = Vector2Normalize(Vector2Subtract(link->circle1->current_position, link->circle2->current_position));
 
-        link->circle1->current_position = Vector2Add(link->circle1->current_position, Vector2Scale(direction, (delta * SCALE)));
-        link->circle2->current_position = Vector2Subtract(link->circle2->current_position, Vector2Scale(direction, (delta * SCALE)));
+        if(link->circle1->status == FREE)
+            link->circle1->current_position = Vector2Add(link->circle1->current_position, Vector2Scale(direction, (delta * SCALE)));
+        
+        if(link->circle2->status == FREE)
+            link->circle2->current_position = Vector2Subtract(link->circle2->current_position, Vector2Scale(direction, (delta * SCALE)));
     }
 }
 
