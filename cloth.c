@@ -33,6 +33,9 @@ void update_circles(Circles* circles, int* grabbed_link_pos)
             apply_gravity(vc, WORLD_GRAVITY, GetFrameTime());
         
         update_position(vc, DAMP, GetFrameTime());
+
+        if((vc->current_position.y > SCRH + vc->radius))
+            vc->current_position.y = SCRH + vc->radius;
     }
 }
 
