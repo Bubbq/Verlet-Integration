@@ -148,13 +148,6 @@ void change_playground_statistics(PlaygroundEditor* statistics, int ball_count)
     DrawFPS(SCRW - 75, 0);
 }
 
-void draw_circles(Circles* circles)
-{
-    int i = 0;
-    for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i)) 
-        DrawCircleSector(vc->current_position, vc->radius, 0, 360, 1, vc->color);
-}
-
 void grid_circle_collision(Grid grid[ROW][COL], Circles* circles)
 {
     for (int r = 0; r < ROW; r++)

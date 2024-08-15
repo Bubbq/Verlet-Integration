@@ -72,9 +72,16 @@ void resize_circles(Circles* circles)
     circles->circle = realloc(circles->circle, circles->capacity);
 }
 
+void draw_circles(Circles* circles)
+{
+    int c = 0;
+    for(VerletCirlce* vc = circles->circle; c < circles->size; c++, vc = (circles->circle + c))
+        DrawCircleSector(vc->current_position, vc->radius, 0, 360, 1, vc->color);
+}
+
 void maintain_link(Link* link)
 {
-    const float SCALE = 0.30f;
+    const float SCALE = 0.40;
     float circle_distance = Vector2Distance(link->circle1->current_position, link->circle2->current_position);
 
     if(circle_distance >= link->target_distance)

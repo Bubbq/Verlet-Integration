@@ -35,6 +35,7 @@ typedef struct
 void add_verlet_circle(Circles* circles, VerletCirlce circle);
 void remove_verlet_circle(Circles* circles, int position);
 void resize_circles(Circles* circles);
+void draw_circles(Circles* circles);
 
 typedef struct
 {

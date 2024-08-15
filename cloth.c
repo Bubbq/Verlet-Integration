@@ -30,9 +30,10 @@ void update_circles(Circles* circles, int* grabbed_link_pos)
             *grabbed_link_pos = i;
         
         if(vc->status == FREE)
+        {
             apply_gravity(vc, WORLD_GRAVITY, GetFrameTime());
-        
-        update_position(vc, DAMP, GetFrameTime());
+            update_position(vc, DAMP, GetFrameTime());
+        }
 
         if((vc->current_position.y > SCRH + vc->radius))
             vc->current_position.y = SCRH + vc->radius;
@@ -61,13 +62,6 @@ void draw_links(Chain* chain)
 {
     for(int i = 0; i < chain->size; i++)
         DrawLine(chain->link[i].circle1->current_position.x, chain->link[i].circle1->current_position.y, chain->link[i].circle2->current_position.x, chain->link[i].circle2->current_position.y, LIGHTGRAY);
-}
-
-void drawcircles(Circles* circles)
-{
-    int c = 0;
-    for(VerletCirlce* vc = circles->circle; c < circles->size; c++, vc = (circles->circle + c))
-        DrawCircleSector(vc->current_position, vc->radius, 0, 360, 1, vc->color);
 }
 
 void init_circles(Circles* circles)
@@ -186,7 +180,7 @@ int main()
         BeginDrawing();
             ClearBackground(BLACK);
             if(show_circles)
-                drawcircles(&circles);
+                draw_circles(&circles);
 			draw_links(&chain);
 		EndDrawing();
     }
