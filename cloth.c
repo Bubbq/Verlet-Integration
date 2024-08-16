@@ -1,6 +1,8 @@
 #include "headers/raylib.h"
 #include "headers/raymath.h"
 #include "headers/physics.h"
+#include "headers/circle.h"
+#include "headers/link.h"
 #include <stdlib.h>
 
 const int SCRW = 900, SCRH = 900;
@@ -13,7 +15,6 @@ const int YPAD = 30;
 
 const int XDIST = ((SCRW - (2 * XPAD)) / (COL - 1));
 // const int YDIST = ((SCRW - (2 * YPAD)) / (ROW - 1));
-
 const int YDIST = 1;
 
 const Vector2 WORLD_GRAVITY = { 0, 2000.0f };
@@ -26,7 +27,7 @@ void update_circles(Circles* circles, int* grabbed_link_pos)
     int i = 0;
     for(VerletCirlce* vc = circles->circle; i < circles->size; i++, vc = (circles->circle + i))
     {
-        if(CheckCollisionPointCircle(GetMousePosition(), vc->current_position, vc->radius) && !(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)))
+        if(CheckCollisionPointCircle(GetMousePosition(), vc->current_position, vc->radius) && !(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) && (i > ROW))
             *grabbed_link_pos = i;
         
         if(vc->status == FREE)
@@ -50,9 +51,8 @@ void update_links(Chain* chain)
         Vector2 starting_position = link->circle1->current_position, 
                 ending_position = link->circle2->current_position;
         
-        // snapping chain if distance is too far or ripping cloth with mouse
         if((Vector2Distance(starting_position, ending_position) >= MAX_LINK_DIST) || ((IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && (CheckCollisionPointLine(GetMousePosition(), starting_position, ending_position, 5))))
-            remove_link(chain, l);
+            delete_link(chain, l);
         
         maintain_link(link);
     }   
@@ -62,10 +62,6 @@ void init_circles(Circles* circles)
 {
     const int RADIUS = 5;
  
-    circles->size = 0;
-    circles->capacity = sizeof(VerletCirlce);
-    circles->circle = malloc(circles->capacity);
-
     Vector2 vc_position = { XPAD, YPAD };
     
     for(int r = 0; r < ROW; r++, vc_position = (Vector2){ XPAD, (YDIST * r) })
@@ -85,10 +81,6 @@ void init_circles(Circles* circles)
 
 void init_chain(Chain* chain, Circles* circles)
 {
-    chain->size = 0;
-    chain->capacity = sizeof(Link);
-    chain->link = malloc(chain->capacity);
-
     for(int r = 0; r < ROW; r++)
     {
         for(int c = 0; c < COL; c++)
@@ -152,8 +144,8 @@ void deinit(VerletCirlce* alloc_circle_mem, Link* alloc_link_mem)
 
 int main()
 {
-	Chain chain;
-    Circles circles;
+	Chain chain = create_chain();
+    Circles circles = create_circles();
 
     bool show_circles = false;
     int grabbed_link_index = -1;
@@ -166,15 +158,14 @@ int main()
     {
         update_links(&chain);
         update_circles(&circles, &grabbed_link_index);
-        
         pull_cloth(&circles, grabbed_link_index);
+        
         if(IsKeyPressed(KEY_C))
             show_circles = !show_circles;
 
         BeginDrawing();
             ClearBackground(BLACK);
-            if(show_circles)
-                draw_circles(&circles);
+            if(show_circles) draw_circles(&circles);
 			draw_links(&chain);
 		EndDrawing();
     }
