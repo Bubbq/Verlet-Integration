@@ -24,14 +24,18 @@ void handle_verlet_circle_collision(VerletCirlce* circle1, VerletCirlce* circle2
         float delta = (circle1->radius + circle2->radius) - distance;
         Vector2 direction = Vector2Normalize(Vector2Subtract(circle1->current_position, circle2->current_position));
 
-        circle1->current_position = Vector2Add(circle1->current_position, Vector2Scale(direction, (delta * SCALE)));
-        circle2->current_position = Vector2Subtract(circle2->current_position, Vector2Scale(direction, (delta * SCALE)));
+        if(circle1->status == FREE)
+            circle1->current_position = Vector2Add(circle1->current_position, Vector2Scale(direction, (delta * SCALE)));
+        if(circle2->status == FREE)
+            circle2->current_position = Vector2Subtract(circle2->current_position, Vector2Scale(direction, (delta * SCALE)));
+
+        // TODO: collision makes you have worlds gravity
     }
 }
 
 void update_position(VerletCirlce * circle, float slow_down_scale, float dt)
 {
-    const int MAX_V = 10.0f;
+    const int MAX_V = 20.0f;
 
     Vector2 velocity = Vector2Scale(Vector2Subtract(circle->current_position, circle->previous_position), slow_down_scale);
     
@@ -81,7 +85,7 @@ void draw_circles(Circles* circles)
 
 void maintain_link(Link* link)
 {
-    const float SCALE = 0.40;
+    const float SCALE = 0.30;
     float circle_distance = Vector2Distance(link->circle1->current_position, link->circle2->current_position);
 
     if(circle_distance >= link->target_distance)
@@ -117,4 +121,10 @@ void resize_chain(Chain* chain)
 {
     chain->capacity *= 2;
     chain->link = realloc(chain->link, chain->capacity);
+}
+
+void draw_links(Chain* chain)
+{
+    for(int i = 0; i < chain->size; i++)
+        DrawLine(chain->link[i].circle1->current_position.x, chain->link[i].circle1->current_position.y, chain->link[i].circle2->current_position.x, chain->link[i].circle2->current_position.y, LIGHTGRAY);
 }

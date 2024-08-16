@@ -56,5 +56,6 @@ typedef struct
 void add_link(Chain* chain, Link link);
 void remove_link(Chain* chain, int position);
 void resize_chain(Chain* chain);
+void draw_links(Chain* chain);
 
 #endif

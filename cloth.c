@@ -58,12 +58,6 @@ void update_links(Chain* chain)
     }   
 }
 
-void draw_links(Chain* chain)
-{
-    for(int i = 0; i < chain->size; i++)
-        DrawLine(chain->link[i].circle1->current_position.x, chain->link[i].circle1->current_position.y, chain->link[i].circle2->current_position.x, chain->link[i].circle2->current_position.y, LIGHTGRAY);
-}
-
 void init_circles(Circles* circles)
 {
     const int RADIUS = 5;
