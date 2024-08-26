@@ -6,6 +6,7 @@
 #include "circle.h"
 #include "link.h"
 
+void handle_border_collision(VerletCirlce* circle, Vector2 constraint_center, Vector2 world_gravity, float constraint_radius);
 void handle_verlet_circle_collision(VerletCirlce* circle1, VerletCirlce* circle2);
 void update_position(VerletCirlce* circle, float slow_down_scale, float dt);
 void apply_gravity(VerletCirlce* circle, Vector2 world_gravity, float dt);

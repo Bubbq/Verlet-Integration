@@ -5,9 +5,9 @@
 
 typedef struct
 {
-    VerletCirlce* circle1;
-    VerletCirlce* circle2;
-    float target_distance;
+	VerletCirlce* circle1;
+	VerletCirlce* circle2;
+	float target_distance;
 } Link;
 
 typedef struct
